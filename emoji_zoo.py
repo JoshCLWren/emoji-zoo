@@ -611,6 +611,8 @@ class GameState:
     ticker: list[str] = field(default_factory=list)
     flashes: dict[tuple[int, int], str] = field(default_factory=dict)
     ticker_offset: int = 0
+    notification: str = ""
+    notification_ticks: int = 0
 
     @property
     def season_name(self) -> str:
@@ -1565,6 +1567,11 @@ def render(state: GameState, paused: bool, speed: int,
             mark = ">" if i == param_sel else " "
             lines.append(f"  {mark} {name}: {val}\033[K")
 
+    if state.notification_ticks > 0 and state.notification:
+        lines.append(f"\033[K")
+        lines.append(f"  \033[44m {state.notification} \033[0m\033[K")
+        state.notification_ticks -= 1
+
     sys.stdout.write("\n".join(lines))
     sys.stdout.flush()
 
@@ -1827,17 +1834,21 @@ def main() -> None:
                     show_params = True
                 elif key == "S":
                     if save_state(state, args.save_file):
-                        state.ticker.append(f"Saved to {args.save_file}")
+                        state.notification = f"Saved to {args.save_file}"
+                        state.notification_ticks = 5
                     else:
-                        state.ticker.append("Save failed!")
+                        state.notification = "Save failed!"
+                        state.notification_ticks = 5
                 elif key == "L":
                     loaded = load_state(args.save_file)
                     if loaded:
                         state = loaded
                         cursor = [state.grid.w // 2, state.grid.h // 2]
-                        state.ticker.append(f"Loaded from {args.save_file}")
+                        state.notification = f"Loaded from {args.save_file}"
+                        state.notification_ticks = 5
                     else:
-                        state.ticker.append("Load failed!")
+                        state.notification = f"Load failed! ({args.save_file})"
+                        state.notification_ticks = 5
                 elif key == "[":
                     state.ticker_offset = max(
                         -len(state.ticker),
@@ -1894,17 +1905,21 @@ def main() -> None:
                     show_params = True
                 elif key == "S":
                     if save_state(state, args.save_file):
-                        state.ticker.append(f"Saved to {args.save_file}")
+                        state.notification = f"Saved to {args.save_file}"
+                        state.notification_ticks = 5
                     else:
-                        state.ticker.append("Save failed!")
+                        state.notification = "Save failed!"
+                        state.notification_ticks = 5
                 elif key == "L":
                     loaded = load_state(args.save_file)
                     if loaded:
                         state = loaded
                         cursor = [state.grid.w // 2, state.grid.h // 2]
-                        state.ticker.append(f"Loaded from {args.save_file}")
+                        state.notification = f"Loaded from {args.save_file}"
+                        state.notification_ticks = 5
                     else:
-                        state.ticker.append("Load failed!")
+                        state.notification = f"Load failed! ({args.save_file})"
+                        state.notification_ticks = 5
                 elif key == "[":
                     state.ticker_offset = max(
                         -len(state.ticker),
