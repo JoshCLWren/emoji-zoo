@@ -1095,11 +1095,16 @@ def _tick_migration(state: GameState) -> None:
         herb_n = sum(1 for row in grid.cells for c in row
                      if c and c.kind == Kind.HERBIVORE)
         if herb_n < config.migrate_herb_threshold and random.random() < config.migrate_herb_chance:
+            existing_species = [c.species for row in grid.cells for c in row
+                                if c and c.kind == Kind.HERBIVORE and c.species]
             for _ in range(config.migrate_herb_group):
                 spot = grid.random_empty()
                 if spot:
                     x, y = spot
-                    entity = make_herb(state.selected_herbs)
+                    if existing_species:
+                        entity = make_herb_of_species(random.choice(existing_species))
+                    else:
+                        entity = make_herb(state.selected_herbs)
                     if entity:
                         grid.cells[y][x] = entity
 
@@ -1110,7 +1115,12 @@ def _tick_migration(state: GameState) -> None:
             spot = grid.random_empty()
             if spot:
                 x, y = spot
-                entity = make_carn(state.selected_carns)
+                existing_species = [c.species for row in grid.cells for c in row
+                                    if c and c.kind == Kind.CARNIVORE and c.species]
+                if existing_species:
+                    entity = make_carn_of_species(random.choice(existing_species))
+                else:
+                    entity = make_carn(state.selected_carns)
                 if entity:
                     grid.cells[y][x] = entity
 

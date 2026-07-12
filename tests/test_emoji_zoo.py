@@ -687,14 +687,15 @@ class TestSimulation:
         rabbit_emoji = ALL_HERBIVORES[0][0]
         herb = make_herb([rabbit_emoji])
         assert herb.species == "rabbit"
-        herb.energy = 200
+        herb.energy = 500
         state.grid.cells[5][5] = herb
-        state.config.herb_repro_threshold = 10
-        herbs_before = count_by_species(state.grid, Kind.HERBIVORE)
-        for _ in range(20):
+        state.config.herb_repro_threshold = 5
+        for _ in range(30):
             step(state, [])
         herbs_after = count_by_species(state.grid, Kind.HERBIVORE)
         species_present = set(herbs_after.keys())
+        assert "rabbit" in species_present, \
+            f"Expected rabbits to survive, got {species_present}"
         assert species_present == {"rabbit"}, \
             f"Expected only rabbits, got {species_present}"
 
@@ -703,13 +704,15 @@ class TestSimulation:
         lion_emoji = ALL_CARNIVORES[0][0]
         carn = make_carn([lion_emoji])
         assert carn.species == "lion"
-        carn.energy = 200
+        carn.energy = 500
         state.grid.cells[5][5] = carn
-        state.config.carn_repro_threshold = 10
-        for _ in range(20):
+        state.config.carn_repro_threshold = 5
+        for _ in range(30):
             step(state, [])
         carns_after = count_by_species(state.grid, Kind.CARNIVORE)
         species_present = set(carns_after.keys())
+        assert "lion" in species_present, \
+            f"Expected lions to survive, got {species_present}"
         assert species_present == {"lion"}, \
             f"Expected only lions, got {species_present}"
 
