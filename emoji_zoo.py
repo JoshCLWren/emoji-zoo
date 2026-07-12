@@ -11,7 +11,7 @@ sweep through dense populations. Dead animals decompose into nutrients
 that feed plants. Animals get thirsty and must drink from water.
 
 Create your own species with custom traits and emojis! Press 'c' in the
-species picker or run with --create.
+species picker to start the creator.
 
 Controls:
   SPACE  pause / resume
@@ -44,11 +44,13 @@ import time
 import tty
 from dataclasses import dataclass, field, asdict
 from enum import Enum
-from typing import Optional
+from typing import Optional, Callable
 
 from faker import Faker
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.containers import Container
+from textual.widget import Widget
 from textual.widgets import (
     Static, DataTable, Header, Footer, Label, Input, Button, RichLog,
 )
@@ -2015,8 +2017,8 @@ class SpeciesPickerScreen(Screen):
     ]
 
     def __init__(self, config: Config, preset: str,
-                 args: argparse.Namespace) -> None:
-        super().__init__()
+                 args: argparse.Namespace, id: str | None = None) -> None:
+        super().__init__(id=id)
         self.config = config
         self.preset = preset
         self.args = args
@@ -2091,7 +2093,8 @@ class SpeciesPickerScreen(Screen):
             self.config, sel_herbs, sel_carns, self.args))
 
     def action_create(self) -> None:
-        self.app.push_screen(CreateSpeciesScreen(self.config, self.args))
+        self.app.push_screen(CreateSpeciesScreen(
+            self.config, self.args, on_done=self._refresh_table))
 
     def action_delete(self) -> None:
         custom = ([e for e, _, _ in CUSTOM_HERBIVORES]
@@ -2126,131 +2129,291 @@ class SpeciesPickerScreen(Screen):
 class CreateSpeciesScreen(Screen):
     BINDINGS = [
         Binding("escape", "cancel", "Cancel"),
+        Binding("backspace", "back", "Back"),
+        Binding("b", "back", "Back"),
+        Binding("enter", "next", "Next"),
+        Binding("r", "roll", "Roll All"),
     ]
 
-    def __init__(self, config: Config, args: argparse.Namespace) -> None:
+    def __init__(self, config: Config, args: argparse.Namespace,
+                 on_done: Callable[[], None] | None = None) -> None:
         super().__init__()
         self.config = config
         self.args = args
-        self._step = "emoji"
+        self.on_done = on_done
+        self._step = 0  # 0=emoji, 1=name, 2=kind, 3=traits
         self._emoji: Optional[str] = None
-        self._name: Optional[str] = None
+        self._name: str = ""
         self._kind: Optional[str] = None
         self._traits: Optional[SpeciesTraits] = None
+        self._name_error: str = ""
+        self._trait_sel = 0
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield Label("Choose an emoji for your species:", id="create-label")
-        yield DataTable(id="create-grid")
+        yield Static(id="wizard-bar")
+        with Container(id="wizard-content"):
+            yield DataTable(id="emoji-grid", cursor_type="cell")
+            yield Input(placeholder="species name (3-16 chars, a-z 0-9 _)",
+                        id="name-input", classes="wizard-hidden")
+            yield Static(id="kind-picker", classes="wizard-hidden")
+            yield DataTable(id="traits-table", classes="wizard-hidden",
+                            cursor_type="row")
+            yield Static(id="trait-help", classes="wizard-hidden")
+        yield Static(id="wizard-actions")
         yield Footer()
 
     def on_mount(self) -> None:
-        table = self.query_one("#create-grid", DataTable)
-        table.cursor_type = "cell"
+        self._build_emoji_grid()
+        self._build_kind_picker()
+        self._refresh()
+
+    def _build_emoji_grid(self) -> None:
+        table = self.query_one("#emoji-grid", DataTable)
+        builtin_emojis = {e for e, _, _ in ALL_HERBIVORES + ALL_CARNIVORES}
+        cols = []
+        for r, row in enumerate(CUSTOM_EMOJI_GRID):
+            for c, (emoji, label) in enumerate(row):
+                if r == 0:
+                    cols.append(f" {emoji or label} ")
+        table.add_columns(*cols)
         for row in CUSTOM_EMOJI_GRID:
-            table.add_columns(*[f" {e} " if e else f" {l} " for e, l in row])
-        for row in CUSTOM_EMOJI_GRID:
-            table.add_row(*[e if e else f"[dim]{l}[/]" for e, l in row])
+            cells = []
+            for emoji, label in row:
+                if emoji:
+                    if emoji in builtin_emojis:
+                        cells.append(f"[dim]{emoji}[/]")
+                    else:
+                        cells.append(f" {emoji} ")
+                else:
+                    cells.append(f"[dim]{label}[/]")
+            table.add_row(*cells)
+
+    def _build_kind_picker(self) -> None:
+        picker = self.query_one("#kind-picker", Static)
+        picker.update(
+            "[b]Choose type:[/b]\n\n"
+            "  [1] [green]Herbivore[/]  (plant eater)\n"
+            "  [2] [red]Carnivore[/]   (hunter)\n\n"
+            "  Press 1 or 2, or click below:"
+        )
+
+    def _refresh(self) -> None:
+        self._refresh_wizard_bar()
+        self._refresh_content()
+        self._refresh_actions()
+
+    def _refresh_wizard_bar(self) -> None:
+        steps = ["Emoji", "Name", "Kind", "Traits"]
+        bar = self.query_one("#wizard-bar", Static)
+        parts = []
+        for i, s in enumerate(steps):
+            if i < self._step:
+                parts.append(f"[green]✓ {s}[/]")
+            elif i == self._step:
+                parts.append(f"[bold reverse] {s} [/]")
+            else:
+                parts.append(f"[dim]{s}[/]")
+        bar.update("  ".join(parts))
+
+    def _refresh_content(self) -> None:
+        for w_id in ["emoji-grid", "name-input", "kind-picker",
+                     "traits-table", "trait-help"]:
+            w = self.query_one(f"#{w_id}", expect_type=Widget)
+            w.display = False
+
+        if self._step == 0:
+            self.query_one("#emoji-grid").display = True
+        elif self._step == 1:
+            inp = self.query_one("#name-input", Input)
+            inp.display = True
+            inp.value = self._name
+            if self._name_error:
+                self.query_one("#wizard-bar").update(
+                    self.query_one("#wizard-bar").renderable + f"\n[red]{self._name_error}[/]")
+            inp.focus()
+        elif self._step == 2:
+            self.query_one("#kind-picker").display = True
+        elif self._step == 3:
+            self.query_one("#traits-table").display = True
+            self.query_one("#trait-help").display = True
+            self._build_traits_table()
+
+    def _build_traits_table(self) -> None:
+        if not self._traits:
+            self._traits = roll_traits(self._kind)
+        table = self.query_one("#traits-table", DataTable)
+        table.clear()
+        table.add_columns("Trait", "Value", "Range", "+/-")
+        for i, (fname, ftype, lo, hi) in enumerate(_TRAIT_FIELDS):
+            val = getattr(self._traits, fname)
+            if ftype == "bool":
+                val_str = "yes" if val else "no"
+                rng = "y/n"
+            elif ftype == "float":
+                val_str = f"{val:.2f}"
+                rng = f"{lo:.2f}–{hi:.2f}"
+            else:
+                val_str = str(val)
+                rng = f"{lo}–{hi}"
+            mark = "► " if i == self._trait_sel else "  "
+            table.add_row(f"{mark}{fname}", val_str, rng, "[green]+[/] [red]-[/]")
+
+        help_text = self.query_one("#trait-help", Static)
+        help_text.update(
+            "[b]Controls:[/b] ↑/↓ select trait | + increase | - decrease | "
+            "[bold]r[/] roll all | [bold]Enter[/] save | [bold]ESC[/] cancel | [bold]Backspace[/] back"
+        )
+
+    def _refresh_actions(self) -> None:
+        actions = self.query_one("#wizard-actions", Static)
+        if self._step == 0:
+            actions.update("[dim]ESC cancel  Enter select[/dim]")
+        elif self._step == 1:
+            actions.update("[dim]ESC cancel  Enter next  Backspace back[/dim]")
+        elif self._step == 2:
+            actions.update("[dim]ESC cancel  1/2 choose  Backspace back[/dim]")
+        else:
+            actions.update("[dim]ESC cancel  Enter save  Backspace back[/dim]")
 
     def on_data_table_cell_selected(self, event) -> None:
+        if self._step != 0:
+            return
         r, c = event.coordinate
         if 0 <= r < len(CUSTOM_EMOJI_GRID) and 0 <= c < len(CUSTOM_EMOJI_GRID[0]):
             emoji, label = CUSTOM_EMOJI_GRID[r][c]
             if emoji:
+                builtin_emojis = {e for e, _, _ in ALL_HERBIVORES + ALL_CARNIVORES}
+                if emoji in builtin_emojis:
+                    self._name_error = "That emoji is reserved for a built-in species."
+                    self._refresh()
+                    return
                 self._emoji = emoji
-                self._step = "name"
-                self.query_one("#create-grid").display = False
-                self.query_one("#create-label").update(
-                    f"Selected: {emoji}  Enter a name (3-16 chars):")
-                self.mount(Input(placeholder="species name", id="name-input"))
-                self.query_one("#name-input").focus()
+                self._name_error = ""
+                self._step = 1
+                self._name = ""
+                self._refresh()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if self._step == 1 and event.input.id == "name-input":
+            self._name = event.value.strip().lower().replace(" ", "_")
+            self._name_error = ""
+            if len(self._name) < 3 or len(self._name) > 16:
+                self._name_error = f"Name must be 3-16 chars (got {len(self._name)})"
+            elif not all(c.isalnum() or c == "_" for c in self._name):
+                self._name_error = "Name must be alphanumeric + underscore only"
+            elif self._name in HERBIVORE_TRAITS or self._name in CARNIVORE_TRAITS:
+                self._name_error = f"'{self._name}' conflicts with a built-in species"
+            self._refresh()
 
     def on_input_submitted(self, event) -> None:
-        if self._step == "name":
-            name = event.value.strip().lower().replace(" ", "_")
-            if len(name) < 3 or len(name) > 16:
-                self.query_one("#create-label").update(
-                    f"Name must be 3-16 chars (got {len(name)}). Try again:")
-                return
-            if name in HERBIVORE_TRAITS or name in CARNIVORE_TRAITS:
-                self.query_one("#create-label").update(
-                    f"'{name}' conflicts with a built-in species. Try again:")
-                return
-            self._name = name
-            self._step = "kind"
-            self.query_one("#name-input").display = False
-            self.query_one("#create-label").update(
-                f"Name: {name}  Choose type:")
-            self.mount(Button("1) Herbivore", id="btn-herb", variant="primary"))
-            self.mount(Button("2) Carnivore", id="btn-carn", variant="warning"))
-
-    def on_button_pressed(self, event) -> None:
-        if event.button.id == "btn-herb":
-            self._kind = "herbivore"
-            self._start_traits()
-        elif event.button.id == "btn-carn":
-            self._kind = "carnivore"
-            self._start_traits()
-        elif event.button.id == "btn-roll":
-            self._traits = roll_traits(self._kind)
-            self._refresh_traits()
-        elif event.button.id == "btn-save":
-            if self._traits and self._emoji and self._name and self._kind:
-                add_custom_species(self._name, self._emoji,
-                                   self._kind, self._traits)
-                self.app.pop_screen()
-                self.app.get_screen("picker")._refresh_table()
-
-    def _start_traits(self) -> None:
-        self._step = "traits"
-        self.query_one("#btn-herb", Button).display = False
-        self.query_one("#btn-carn", Button).display = False
-        self.query_one("#create-label").update(
-            f"{self._name} ({self._emoji}) - Adjust traits:")
-        self._traits = roll_traits(self._kind)
-        self.mount(
-            DataTable(id="traits-table"),
-            Button("Roll All (r)", id="btn-roll", variant="success"),
-            Button("Save", id="btn-save", variant="primary"),
-        )
-        self._refresh_traits()
-
-    def _refresh_traits(self) -> None:
-        table = self.query_one("#traits-table", DataTable)
-        table.clear()
-        table.add_columns("Trait", "Value", "+/-")
-        for fname, ftype, lo, hi in _TRAIT_FIELDS:
-            val = getattr(self._traits, fname)
-            if ftype == "bool":
-                val_str = "yes" if val else "no"
-            elif ftype == "float":
-                val_str = f"{val:.2f}"
-            else:
-                val_str = str(val)
-            table.add_row(fname, val_str, "[green]+[/] [red]-[/]")
-
-    def on_data_table_row_selected(self, event) -> None:
-        if self._step == "traits" and self._traits:
-            idx = event.coordinate.row
-            if 0 <= idx < len(_TRAIT_FIELDS):
-                fname, ftype, lo, hi = _TRAIT_FIELDS[idx]
-                current = getattr(self._traits, fname)
-                if ftype == "bool":
-                    setattr(self._traits, fname, not current)
-                elif ftype == "float":
-                    setattr(self._traits, fname,
-                            round(min(hi, max(lo, current + 0.05)), 2))
-                else:
-                    setattr(self._traits, fname, min(hi, max(lo, current + 1)))
-                self._refresh_traits()
+        if self._step == 1 and event.input.id == "name-input" and not self._name_error:
+            self._step = 2
+            self._refresh()
 
     def on_key(self, event) -> None:
-        if self._step == "traits" and self._traits and event.character == "r":
+        if self._step == 2:
+            if event.key == "1":
+                self._kind = "herbivore"
+                self._step = 3
+                self._traits = roll_traits(self._kind)
+                self._trait_sel = 0
+                self._refresh()
+            elif event.key == "2":
+                self._kind = "carnivore"
+                self._step = 3
+                self._traits = roll_traits(self._kind)
+                self._trait_sel = 0
+                self._refresh()
+        elif self._step == 3 and self._traits:
+            if event.key == "up":
+                self._trait_sel = max(0, self._trait_sel - 1)
+                self._build_traits_table()
+                event.prevent_default()
+            elif event.key == "down":
+                self._trait_sel = min(len(_TRAIT_FIELDS) - 1, self._trait_sel + 1)
+                self._build_traits_table()
+                event.prevent_default()
+            elif event.key == "plus" or event.key == "=":
+                self._adjust_trait(1)
+                event.prevent_default()
+            elif event.key == "minus" or event.key == "-":
+                self._adjust_trait(-1)
+                event.prevent_default()
+            elif event.character == "r":
+                self.action_roll()
+                event.prevent_default()
+
+    def _adjust_trait(self, direction: int) -> None:
+        if not self._traits:
+            return
+        fname, ftype, lo, hi = _TRAIT_FIELDS[self._trait_sel]
+        current = getattr(self._traits, fname)
+        if ftype == "bool":
+            setattr(self._traits, fname, not current)
+        elif ftype == "float":
+            new_val = round(current + 0.05 * direction, 2)
+            setattr(self._traits, fname, max(lo, min(hi, new_val)))
+        else:
+            new_val = current + direction
+            setattr(self._traits, fname, max(lo, min(hi, new_val)))
+        self._build_traits_table()
+
+    def action_roll(self) -> None:
+        if self._kind:
             self._traits = roll_traits(self._kind)
-            self._refresh_traits()
+            self._build_traits_table()
+
+    def on_data_table_row_selected(self, event) -> None:
+        if self._step == 3 and self._traits:
+            self._trait_sel = event.coordinate.row
+            self._build_traits_table()
+
+    def on_button_pressed(self, event) -> None:
+        if event.button.id == "btn-roll":
+            self.action_roll()
+        elif event.button.id == "btn-save":
+            self.action_save()
+
+    def action_next(self) -> None:
+        if self._step == 0 and self._emoji:
+            self._step = 1
+            self._refresh()
+        elif self._step == 1 and not self._name_error and self._name:
+            self._step = 2
+            self._refresh()
+        elif self._step == 2 and self._kind:
+            self._step = 3
+            self._traits = roll_traits(self._kind)
+            self._trait_sel = 0
+            self._refresh()
+        elif self._step == 3:
+            self.action_save()
+
+    def action_back(self) -> None:
+        if self._step > 0:
+            self._step -= 1
+            if self._step == 1:
+                self._name_error = ""
+            elif self._step == 2:
+                self._kind = None
+            elif self._step == 3:
+                self._traits = None
+            self._refresh()
 
     def action_cancel(self) -> None:
         self.app.pop_screen()
+
+    def action_save(self) -> None:
+        if self._traits and self._emoji and self._name and self._kind:
+            if self._name in HERBIVORE_TRAITS or self._name in CARNIVORE_TRAITS:
+                self._name_error = f"'{self._name}' conflicts with a built-in species"
+                self._refresh()
+                return
+            add_custom_species(self._name, self._emoji, self._kind, self._traits)
+            if self.on_done:
+                self.on_done()
+            self.app.pop_screen()
 
 
 class GridView(Static):
@@ -2804,7 +2967,7 @@ class ZooApp(App):
                     state.selected_carns, self.args))
             else:
                 self.exit(message=f"Could not load from {self.args.save_file}")
-        elif self.args.no_picker and not self.args.create:
+        elif self.args.no_picker:
             herbs = [e for e, _, _ in ALL_HERBIVORES]
             herbs += [e for e, _, _ in CUSTOM_HERBIVORES]
             carns = [e for e, _, _ in ALL_CARNIVORES]
@@ -2813,7 +2976,7 @@ class ZooApp(App):
                 self.config, herbs, carns, self.args))
         else:
             self.push_screen(SpeciesPickerScreen(
-                self.config, self.preset, self.args))
+                self.config, self.preset, self.args, id="picker"))
 
 
 SAVE_FILE = "emoji_zoo_save.json"
@@ -2838,8 +3001,6 @@ def main() -> None:
                         help="save/load file path")
     parser.add_argument("--load", action="store_true",
                         help="load saved ecosystem on startup")
-    parser.add_argument("--create", action="store_true",
-                        help="launch species creator, then start the zoo")
     parser.add_argument("--debug", action="store_true",
                         help="enable debug logging")
     args = parser.parse_args()
