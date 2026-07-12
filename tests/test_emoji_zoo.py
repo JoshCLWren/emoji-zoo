@@ -11,6 +11,8 @@ from emoji_zoo import (
     Config, Entity, Grid, GameState, Kind, SpeciesTraits, Stats,
     HERBIVORE_TRAITS, CARNIVORE_TRAITS, PRESETS,
     ALL_HERBIVORES, ALL_CARNIVORES, EMOJI_TO_SPECIES,
+    CUSTOM_TRAITS_BY_KIND, CUSTOM_HERBIVORES, CUSTOM_CARNIVORES,
+    CUSTOM_EMOJI_GRID, CUSTOM_SPECIES_DIR,
     make_config, make_plant, make_herb, make_carn,
     make_herb_of_species, make_carn_of_species,
     make_event, species_of, sign, find_nearest, find_nearest_species,
@@ -18,6 +20,10 @@ from emoji_zoo import (
     step, count_pop, count_by_species,
     populate, _place_water, drop_creatures,
     save_state, load_state,
+    load_custom_species, save_custom_species, add_custom_species,
+    remove_custom_species, roll_traits, update_emoji_maps,
+    _build_custom_key_bindings, _entity_to_dict, _dict_to_entity,
+    _SPECIES_TO_EMOJI,
     SEASON_NAMES, SEASON_PLANT_MOD, SEASON_ENERGY_MOD, SEASON_DIEOFF_CHANCE,
     event_to_message, _param_list, _adjust_param,
     get_traits,
@@ -1304,3 +1310,300 @@ class TestIntegration:
         state.stats = Stats()
         assert state.tick == 0
         assert count_pop(state.grid)[Kind.PLANT] > 0
+
+
+# -- Custom species tests --------------------------------------------------
+
+
+class TestCustomSpeciesStorage:
+    def test_add_and_remove_custom_species(self, tmp_path):
+        import emoji_zoo as ez
+        orig = ez.CUSTOM_SPECIES_FILE
+        ez.CUSTOM_SPECIES_FILE = str(tmp_path / "custom.json")
+        try:
+            traits = SpeciesTraits(speed=2, vision=7, max_age=150, color="\033[96m")
+            assert add_custom_species("foxaroo", "\U0001F99C", "herbivore", traits)
+            assert "foxaroo" in CUSTOM_TRAITS_BY_KIND["herbivore"]
+            assert len(CUSTOM_HERBIVORES) == 1
+
+            assert remove_custom_species("foxaroo")
+            assert "foxaroo" not in CUSTOM_TRAITS_BY_KIND["herbivore"]
+            assert len(CUSTOM_HERBIVORES) == 0
+        finally:
+            ez.CUSTOM_SPECIES_FILE = orig
+            CUSTOM_TRAITS_BY_KIND["herbivore"].clear()
+            CUSTOM_TRAITS_BY_KIND["carnivore"].clear()
+            CUSTOM_HERBIVORES.clear()
+            CUSTOM_CARNIVORES.clear()
+
+    def test_save_and_load_roundtrip(self, tmp_path):
+        import emoji_zoo as ez
+        orig = ez.CUSTOM_SPECIES_FILE
+        ez.CUSTOM_SPECIES_FILE = str(tmp_path / "custom.json")
+        try:
+            traits = SpeciesTraits(speed=1, vision=5, max_age=100)
+            add_custom_species("blobfish", "\U0001F419", "carnivore", traits)
+            assert save_custom_species()
+
+            CUSTOM_TRAITS_BY_KIND["carnivore"].clear()
+            CUSTOM_CARNIVORES.clear()
+            ez._CUSTOM_SPECIES_DATA.clear()
+
+            load_custom_species()
+            assert "blobfish" in CUSTOM_TRAITS_BY_KIND["carnivore"]
+            loaded_traits = CUSTOM_TRAITS_BY_KIND["carnivore"]["blobfish"]
+            assert loaded_traits.speed == 1
+            assert loaded_traits.vision == 5
+            assert loaded_traits.max_age == 100
+            assert len(CUSTOM_CARNIVORES) == 1
+        finally:
+            ez.CUSTOM_SPECIES_FILE = orig
+            CUSTOM_TRAITS_BY_KIND["herbivore"].clear()
+            CUSTOM_TRAITS_BY_KIND["carnivore"].clear()
+            CUSTOM_HERBIVORES.clear()
+            CUSTOM_CARNIVORES.clear()
+            ez._CUSTOM_SPECIES_DATA.clear()
+
+    def test_load_nonexistent_file(self):
+        import emoji_zoo as ez
+        orig = ez.CUSTOM_SPECIES_FILE
+        ez.CUSTOM_SPECIES_FILE = "/tmp/nonexistent_emoji_zoo_test.json"
+        try:
+            load_custom_species()
+            assert len(CUSTOM_HERBIVORES) == 0
+            assert len(CUSTOM_CARNIVORES) == 0
+        finally:
+            ez.CUSTOM_SPECIES_FILE = orig
+
+    def test_add_invalid_species_fails(self):
+        assert not add_custom_species("", "\U0001F430", "herbivore", SpeciesTraits())
+        assert not add_custom_species("x", "", "herbivore", SpeciesTraits())
+        assert not add_custom_species("x", "\U0001F430", "invalid", SpeciesTraits())
+
+    def test_remove_nonexistent_species_fails(self):
+        assert not remove_custom_species("no_such_species")
+
+
+class TestRollTraits:
+    def test_roll_herbivore_has_valid_ranges(self):
+        for _ in range(20):
+            t = roll_traits("herbivore")
+            assert t.speed >= 1
+            assert 3 <= t.vision <= 8
+            assert 2 <= t.flee_vision <= 6
+            assert t.max_age >= 60
+            assert t.can_hunt_carns is False
+
+    def test_roll_carnivore_has_valid_ranges(self):
+        for _ in range(20):
+            t = roll_traits("carnivore")
+            assert t.speed >= 1
+            assert 4 <= t.vision <= 9
+            assert t.max_age >= 120
+
+    def test_roll_traits_returns_different_results(self):
+        t1 = roll_traits("herbivore")
+        t2 = roll_traits("herbivore")
+        assert not (t1.vision == t2.vision and t1.max_age == t2.max_age
+                    and t1.speed == t2.speed)
+
+
+class TestGetTraitsCustom:
+    def test_get_traits_builtin(self):
+        t = get_traits("herbivore", "rabbit")
+        assert t == HERBIVORE_TRAITS["rabbit"]
+
+    def test_get_traits_custom(self):
+        custom = SpeciesTraits(speed=3, vision=9)
+        CUSTOM_TRAITS_BY_KIND["herbivore"]["testbeast"] = custom
+        try:
+            t = get_traits("herbivore", "testbeast")
+            assert t is custom
+        finally:
+            del CUSTOM_TRAITS_BY_KIND["herbivore"]["testbeast"]
+
+    def test_get_traits_unknown_returns_default(self):
+        t = get_traits("herbivore", "nonexistent")
+        assert t.speed == SpeciesTraits().speed
+
+
+class TestMakeHerbCarnCustom:
+    def test_make_herb_with_custom_emoji(self):
+        custom = SpeciesTraits(start_energy=5, color="\033[96m")
+        CUSTOM_TRAITS_BY_KIND["herbivore"]["blobcat"] = custom
+        emoji = "\U0001F431"
+        EMOJI_TO_SPECIES[emoji] = "blobcat"
+        try:
+            e = make_herb([emoji])
+            assert e is not None
+            assert e.species == "blobcat"
+            assert e.energy == 5
+            assert e.traits is custom
+        finally:
+            del CUSTOM_TRAITS_BY_KIND["herbivore"]["blobcat"]
+            EMOJI_TO_SPECIES.pop(emoji, None)
+
+    def test_make_carn_with_custom_emoji(self):
+        custom = SpeciesTraits(start_energy=99, color="\033[91m")
+        CUSTOM_TRAITS_BY_KIND["carnivore"]["deathbug"] = custom
+        emoji = "\U0001F41B"
+        EMOJI_TO_SPECIES[emoji] = "deathbug"
+        try:
+            e = make_carn([emoji])
+            assert e is not None
+            assert e.species == "deathbug"
+            assert e.energy == 99
+            assert e.traits is custom
+        finally:
+            del CUSTOM_TRAITS_BY_KIND["carnivore"]["deathbug"]
+            EMOJI_TO_SPECIES.pop(emoji, None)
+
+
+class TestEntityDictCustom:
+    def test_entity_to_dict_embeds_custom_traits(self):
+        custom = SpeciesTraits(speed=2, vision=7)
+        e = Entity(Kind.HERBIVORE, "\U0001F431", 10, species="blobcat", traits=custom)
+        d = _entity_to_dict(e)
+        assert "traits" in d
+        assert d["traits"]["speed"] == 2
+
+    def test_entity_to_dict_no_traits_for_builtin(self):
+        e = Entity(Kind.HERBIVORE, "\U0001F430", 10,
+                   species="rabbit", traits=HERBIVORE_TRAITS["rabbit"])
+        d = _entity_to_dict(e)
+        assert "traits" not in d
+
+    def test_dict_to_entity_with_embedded_traits(self):
+        d = {
+            "kind": "HERBIVORE", "emoji": "\U0001F431", "energy": 10,
+            "species": "blobcat", "thirst": 0, "diseased": 0,
+            "traits": {"speed": 2, "vision": 7, "flee_vision": 3,
+                       "start_energy": 10, "max_energy": 25,
+                       "eat_energy": 8, "repro_threshold": 20,
+                       "repro_cost": 8, "max_age": 150,
+                       "max_neighbors": 2, "pack_bonus": 0.1,
+                       "can_hunt_carns": False, "color": ""},
+        }
+        e = _dict_to_entity(d)
+        assert e.species == "blobcat"
+        assert e.traits.speed == 2
+        assert e.traits.vision == 7
+
+    def test_dict_to_entity_falls_back_to_custom(self):
+        CUSTOM_TRAITS_BY_KIND["carnivore"]["sneak"] = SpeciesTraits(speed=3)
+        try:
+            d = {
+                "kind": "CARNIVORE", "emoji": "\U0001F43D", "energy": 14,
+                "species": "sneak", "thirst": 0, "diseased": 0,
+            }
+            e = _dict_to_entity(d)
+            assert e.traits.speed == 3
+        finally:
+            del CUSTOM_TRAITS_BY_KIND["carnivore"]["sneak"]
+
+
+class TestUpdateEmojiMaps:
+    def test_update_emoji_maps_adds_custom(self):
+        CUSTOM_HERBIVORES.clear()
+        CUSTOM_CARNIVORES.clear()
+        CUSTOM_HERBIVORES.append(("\U0001F431", "z", "blobcat"))
+        try:
+            update_emoji_maps()
+            assert EMOJI_TO_SPECIES.get("\U0001F431") == "blobcat"
+            assert _SPECIES_TO_EMOJI.get("blobcat") == "\U0001F431"
+        finally:
+            CUSTOM_HERBIVORES.clear()
+            EMOJI_TO_SPECIES.pop("\U0001F431", None)
+            _SPECIES_TO_EMOJI.pop("blobcat", None)
+
+
+class TestCustomKeyBindings:
+    def test_builds_bindings(self):
+        bindings = _build_custom_key_bindings()
+        assert len(bindings) > 0
+        assert all(len(k) == 1 for k in bindings)
+
+
+class TestCustomEmojiGrid:
+    def test_grid_is_nonempty(self):
+        assert len(CUSTOM_EMOJI_GRID) > 0
+        for row in CUSTOM_EMOJI_GRID:
+            assert len(row) > 0
+            for emoji, label in row:
+                if emoji:
+                    assert isinstance(emoji, str)
+
+
+class TestCustomSpeciesInSimulation:
+    def test_custom_species_survives_simulation(self, tmp_path):
+        import emoji_zoo as ez
+        orig = ez.CUSTOM_SPECIES_FILE
+        ez.CUSTOM_SPECIES_FILE = str(tmp_path / "custom.json")
+        try:
+            traits = SpeciesTraits(
+                speed=1, vision=5, flee_vision=3, start_energy=14,
+                max_energy=35, eat_energy=10, repro_threshold=30,
+                repro_cost=14, max_age=200, pack_bonus=0.1,
+            )
+            add_custom_species("testherb", "\U0001F431", "herbivore", traits)
+
+            grid = Grid(10, 10)
+            cfg = make_config("balanced")
+            herbs = ["\U0001F431"]
+            carns = []
+            populate(grid, cfg, herbs, carns)
+            state = GameState(grid=grid, config=cfg,
+                              selected_herbs=herbs, selected_carns=carns)
+
+            for _ in range(50):
+                step(state, [])
+
+            assert state.tick == 50
+        finally:
+            ez.CUSTOM_SPECIES_FILE = orig
+            CUSTOM_TRAITS_BY_KIND["herbivore"].clear()
+            CUSTOM_TRAITS_BY_KIND["carnivore"].clear()
+            CUSTOM_HERBIVORES.clear()
+            CUSTOM_CARNIVORES.clear()
+            ez._CUSTOM_SPECIES_DATA.clear()
+
+    def test_save_load_with_custom_species(self, tmp_path):
+        import emoji_zoo as ez
+        orig = ez.CUSTOM_SPECIES_FILE
+        ez.CUSTOM_SPECIES_FILE = str(tmp_path / "custom.json")
+        save_path = str(tmp_path / "game.json")
+        try:
+            traits = SpeciesTraits(start_energy=12, max_energy=30, max_age=100)
+            add_custom_species("sparkle", "\u2728", "herbivore", traits)
+
+            grid = Grid(8, 8)
+            cfg = make_config("balanced")
+            herbs = ["\u2728"]
+            entity = make_herb_of_species("sparkle")
+            assert entity is not None
+            grid.cells[0][0] = entity
+            state = GameState(grid=grid, config=cfg,
+                              selected_herbs=herbs, selected_carns=[])
+            step(state, [])
+
+            assert save_state(state, save_path)
+            loaded = load_state(save_path)
+            assert loaded is not None
+            assert loaded.tick == 1
+
+            sparkle_cells = 0
+            for y in range(loaded.grid.h):
+                for x in range(loaded.grid.w):
+                    e = loaded.grid.cells[y][x]
+                    if e and e.species == "sparkle":
+                        sparkle_cells += 1
+                        assert e.traits is not None
+                        assert e.traits.start_energy == 12
+            assert sparkle_cells > 0
+        finally:
+            ez.CUSTOM_SPECIES_FILE = orig
+            CUSTOM_TRAITS_BY_KIND["herbivore"].clear()
+            CUSTOM_TRAITS_BY_KIND["carnivore"].clear()
+            CUSTOM_HERBIVORES.clear()
+            CUSTOM_CARNIVORES.clear()
+            ez._CUSTOM_SPECIES_DATA.clear()

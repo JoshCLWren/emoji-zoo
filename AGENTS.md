@@ -10,7 +10,8 @@ Each species has unique traits (speed, vision, lifespan, reproduction thresholds
 Seasons cycle through Spring/Summer/Autumn/Winter, affecting plant growth and
 energy burn. Disease can sweep through dense populations. Dead animals decompose
 into nutrients that boost plant growth. Animals get thirsty and must drink from
-water. Some carnivores can hunt smaller carnivore species.
+water. Some carnivores can hunt smaller carnivore species. Create your own
+species with custom emojis and traits that persist across sessions.
 
 ## Tech Stack
 
@@ -32,11 +33,12 @@ python3 emoji_zoo.py
 python3 emoji_zoo.py --seed 42 --preset desert --speed 2 --no-picker
 python3 emoji_zoo.py --width 60 --height 30
 python3 emoji_zoo.py --load  # load saved ecosystem
+python3 emoji_zoo.py --create  # launch species picker (for creating custom species)
 python3 emoji_zoo.py --debug  # enable logging
 ```
 
 Flags: `--seed`, `--width`, `--height`, `--speed`, `--no-picker`, `--preset`,
-`--save-file`, `--load`, `--debug`.
+`--save-file`, `--load`, `--create`, `--debug`.
 
 ### Presets
 
@@ -47,6 +49,21 @@ Flags: `--seed`, `--width`, `--height`, `--speed`, `--no-picker`, `--preset`,
 - `chaos`: fast everything, short seasons, high disease
 
 Requires a real terminal (not a pipe). Minimum ~42 columns, ~28 lines.
+
+### Custom Species
+
+Custom species are created interactively from the species picker (press `c`)
+or via `python3 emoji_zoo.py --create`. The creation flow:
+
+1. Pick an emoji from a categorized grid (mammals, birds, reptiles, etc.)
+2. Enter a name (3-16 chars, lowercase with underscores)
+3. Choose type: herbivore or carnivore
+4. Roll random traits with `r`, or manually adjust individual stats with `+`/`-`
+5. Press Enter to save, ESC to cancel
+
+Custom species persist in `~/.emoji_zoo/custom_species.json` across sessions.
+They appear in the species picker with a `[custom]` marker and are toggled
+on by default. Press `d` to delete the most recently created custom species.
 
 ## Controls
 
@@ -63,6 +80,14 @@ Requires a real terminal (not a pipe). Minimum ~42 columns, ~28 lines.
 - `L` - load ecosystem from file
 - `q` - quit
 
+### Species Picker Controls
+
+- `1`-`8` / `q`-`i` - toggle built-in herbivores/carnivores
+- `c` - create a new custom species
+- `d` - delete the last custom species
+- `a` - all on, `n` - all off
+- `Enter` - start the zoo
+
 ## Architecture
 
 Everything lives in `emoji_zoo.py` (~1900 lines). Key sections (marked with `# --`):
@@ -71,6 +96,11 @@ Everything lives in `emoji_zoo.py` (~1900 lines). Key sections (marked with `# -
   stats (speed, vision, energy, repro, lifespan, pack_bonus, can_hunt_carns,
   color). `HERBIVORE_TRAITS`/`CARNIVORE_TRAITS` dicts. 8 herbivore and 8
   carnivore species, each with unique values.
+- **Custom species** (lines 160-330): `CUSTOM_TRAITS_BY_KIND`,
+  `CUSTOM_HERBIVORES`/`CUSTOM_CARNIVORES` lists, `CUSTOM_EMOJI_GRID` for the
+  emoji picker. Functions: `load_custom_species()`, `save_custom_species()`,
+  `add_custom_species()`, `remove_custom_species()`, `roll_traits()`.
+  Custom species persist in `~/.emoji_zoo/custom_species.json`.
 - **Config** (lines 158-240): `Config` dataclass with all tunable parameters.
   `PRESETS` dict for named configurations. `make_config()` factory.
 - **Emoji palettes** (lines 243-280): Plant stages, herbivore/carnivore emoji
@@ -131,6 +161,9 @@ Everything lives in `emoji_zoo.py` (~1900 lines). Key sections (marked with `# -
 - Parameter tuning (adjust, clamp, invalid index)
 - Season system (4 seasons, modifiers, cycling, winter dieoff)
 - Integration (100-tick run, seeded reproducibility, reset)
+- Custom species (storage, roll_traits, get_traits, make_herb/carn,
+  entity dict roundtrip, emoji maps, key bindings, simulation with custom
+  species, save/load with custom species)
 
 ## Tuning Guide
 
@@ -158,6 +191,12 @@ tuning menu. For source-level tuning, modify the `Config` dataclass:
   lifespan, and pack bonus. Rabbits breed fast but die young; eagles see far
   but have low energy; bears are slow but long-lived and can hunt other
   carnivores.
+- **Custom species**: Users can create their own species with custom emojis and
+  traits. The creation flow: pick an emoji from a curated grid, name the species,
+  choose herbivore/carnivore, then roll random traits or manually tune each stat.
+  Custom species persist in `~/.emoji_zoo/custom_species.json` and appear in the
+  species picker alongside built-ins. Entity saves embed traits for custom species
+  for portability.
 - **Seasons**: Spring boosts plant growth and reduces energy burn. Winter does
   the opposite and can kill plants. Season length is configurable.
 - **Disease**: Random infection chance per tick. Diseased animals drain extra
