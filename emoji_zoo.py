@@ -28,15 +28,15 @@ from enum import Enum
 
 # -- Tunable parameters ---------------------------------------------------
 
-PLANT_SPREAD_CHANCE = 0.18
+PLANT_SPREAD_CHANCE = 0.06
 PLANT_MAX_GROWTH = 3
-PLANT_SEED_COUNT = 2
+PLANT_SEED_COUNT = 1
 
 HERB_START_ENERGY = 14
-HERB_EAT_ENERGY = 8
-HERB_REPRO_THRESHOLD = 30
-HERB_REPRO_COST = 14
-HERB_VISION = 4
+HERB_EAT_ENERGY = 10
+HERB_REPRO_THRESHOLD = 26
+HERB_REPRO_COST = 10
+HERB_VISION = 5
 HERB_FLEE_VISION = 2
 HERB_MAX_ENERGY = 35
 
@@ -55,7 +55,7 @@ MIGRATE_HERB_CHANCE = 0.08
 MIGRATE_HERB_GROUP = 3
 MIGRATE_CARN_THRESHOLD = 2
 MIGRATE_CARN_CHANCE = 0.03
-PLANT_CAP_RATIO = 0.5
+PLANT_CAP_RATIO = 0.25
 
 INIT_PLANT_RATIO = 0.08
 INIT_HERB_RATIO = 0.03
@@ -276,7 +276,8 @@ def _tick_plant(grid, x, y, e, births):
     if e.growth < PLANT_MAX_GROWTH:
         e.growth += 1
         e.emoji = PLANT_STAGES[e.growth]
-    if random.random() < PLANT_SPREAD_CHANCE:
+    plant_n = sum(1 for row in grid.cells for c in row if c and c.kind == Kind.PLANT)
+    if plant_n < grid.w * grid.h * PLANT_CAP_RATIO and random.random() < PLANT_SPREAD_CHANCE:
         empties = grid.empty_neighbors(x, y)
         if empties:
             nx, ny = random.choice(empties)
