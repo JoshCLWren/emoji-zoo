@@ -130,6 +130,14 @@ class Grid:
     def empty_neighbors(self, x, y):
         return [(nx, ny) for nx, ny in self.neighbors(x, y) if self.cells[ny][nx] is None]
 
+    def passable_neighbors(self, x, y):
+        out = []
+        for nx, ny in self.neighbors(x, y):
+            c = self.cells[ny][nx]
+            if c is None or c.kind == Kind.PLANT:
+                out.append((nx, ny))
+        return out
+
     def random_empty(self, tries=200):
         for _ in range(tries):
             x, y = random.randint(0, self.w - 1), random.randint(0, self.h - 1)
@@ -167,6 +175,16 @@ def try_move(grid, x, y, e, nx, ny):
         grid.cells[y][x] = None
         grid.cells[ny][nx] = e
         return True
+    return False
+
+
+def try_move_through_plants(grid, x, y, e, nx, ny):
+    if 0 <= nx < grid.w and 0 <= ny < grid.h:
+        target = grid.cells[ny][nx]
+        if target is None or target.kind == Kind.PLANT:
+            grid.cells[y][x] = None
+            grid.cells[ny][nx] = e
+            return True
     return False
 
 
@@ -335,7 +353,7 @@ def _tick_carn(grid, x, y, e, births):
         if prey:
             px, py = prey
             nx, ny = x + sign(px - x), y + sign(py - y)
-            if try_move(grid, x, y, e, nx, ny):
+            if try_move_through_plants(grid, x, y, e, nx, ny):
                 x, y = nx, ny
                 if e.energy < CARN_SATIATION:
                     for ax, ay in grid.neighbors(x, y):
@@ -345,10 +363,10 @@ def _tick_carn(grid, x, y, e, births):
                             grid.cells[ay][ax] = None
                             break
         else:
-            empties = grid.empty_neighbors(x, y)
-            if empties:
-                nx, ny = random.choice(empties)
-                if try_move(grid, x, y, e, nx, ny):
+            passables = grid.passable_neighbors(x, y)
+            if passables:
+                nx, ny = random.choice(passables)
+                if try_move_through_plants(grid, x, y, e, nx, ny):
                     x, y = nx, ny
 
     if SELECTED_CARNS and e.energy >= CARN_REPRO_THRESHOLD:
