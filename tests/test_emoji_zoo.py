@@ -3,32 +3,67 @@
 import json
 import os
 import random
-import tempfile
 
 import pytest
 
 from emoji_zoo import (
-    Config, Entity, Grid, GameState, Kind, SpeciesTraits, Stats,
-    HERBIVORE_TRAITS, CARNIVORE_TRAITS, PRESETS,
-    ALL_HERBIVORES, ALL_CARNIVORES, EMOJI_TO_SPECIES,
-    CUSTOM_TRAITS_BY_KIND, CUSTOM_HERBIVORES, CUSTOM_CARNIVORES,
-    CUSTOM_EMOJI_GRID, CUSTOM_SPECIES_DIR,
-    make_config, make_plant, make_herb, make_carn,
-    make_herb_of_species, make_carn_of_species,
-    make_event, species_of, sign, find_nearest, find_nearest_species,
-    try_move, try_move_through_plants, sparkline,
-    step, count_pop, count_by_species,
-    populate, _place_water, drop_creatures,
-    save_state, load_state,
-    load_custom_species, save_custom_species, add_custom_species,
-    remove_custom_species, roll_traits, update_emoji_maps,
-    _build_custom_key_bindings, _entity_to_dict, _dict_to_entity,
     _SPECIES_TO_EMOJI,
-    SEASON_NAMES, SEASON_PLANT_MOD, SEASON_ENERGY_MOD, SEASON_DIEOFF_CHANCE,
-    event_to_message, _param_list, _adjust_param,
+    ALL_CARNIVORES,
+    ALL_HERBIVORES,
+    CARNIVORE_TRAITS,
+    CUSTOM_CARNIVORES,
+    CUSTOM_EMOJI_GRID,
+    CUSTOM_HERBIVORES,
+    CUSTOM_TRAITS_BY_KIND,
+    EMOJI_TO_SPECIES,
+    HERBIVORE_TRAITS,
+    PRESETS,
+    SEASON_DIEOFF_CHANCE,
+    SEASON_ENERGY_MOD,
+    SEASON_NAMES,
+    SEASON_PLANT_MOD,
+    Config,
+    Entity,
+    GameState,
+    Grid,
+    Kind,
+    SpeciesTraits,
+    Stats,
+    _adjust_param,
+    _dict_to_entity,
+    _entity_to_dict,
+    _param_list,
+    _place_water,
+    add_custom_species,
+    count_by_species,
+    count_pop,
+    drop_creatures,
+    event_to_message,
+    find_nearest,
+    find_nearest_species,
     get_traits,
+    load_custom_species,
+    load_state,
+    make_carn,
+    make_carn_of_species,
+    make_config,
+    make_event,
+    make_herb,
+    make_herb_of_species,
+    make_plant,
+    populate,
+    remove_custom_species,
+    roll_traits,
+    save_custom_species,
+    save_state,
+    sign,
+    sparkline,
+    species_of,
+    step,
+    try_move,
+    try_move_through_plants,
+    update_emoji_maps,
 )
-
 
 # -- Fixtures --------------------------------------------------------------
 
@@ -48,14 +83,26 @@ def state(small_grid, config):
     herbs = [e for e, _, _ in ALL_HERBIVORES]
     carns = [e for e, _, _ in ALL_CARNIVORES]
     return GameState(
-        grid=small_grid, config=config,
-        selected_herbs=herbs, selected_carns=carns,
+        grid=small_grid,
+        config=config,
+        selected_herbs=herbs,
+        selected_carns=carns,
     )
 
 
 @pytest.fixture
-def seeded_random():
-    random.seed(42)
+def custom_species_env(tmp_path):
+    import emoji_zoo as ez
+
+    orig = ez.CUSTOM_SPECIES_FILE
+    ez.CUSTOM_SPECIES_FILE = str(tmp_path / "custom.json")
+    yield tmp_path
+    ez.CUSTOM_SPECIES_FILE = orig
+    CUSTOM_TRAITS_BY_KIND["herbivore"].clear()
+    CUSTOM_TRAITS_BY_KIND["carnivore"].clear()
+    CUSTOM_HERBIVORES.clear()
+    CUSTOM_CARNIVORES.clear()
+    ez._CUSTOM_SPECIES_DATA.clear()
 
 
 # -- Grid tests ------------------------------------------------------------
@@ -108,7 +155,7 @@ class TestGrid:
         assert (4, 5) in passables
 
     def test_passable_neighbors_with_water(self, small_grid):
-        small_grid.cells[5][4] = Entity(Kind.WATER, "\U0001F30A", 0)
+        small_grid.cells[5][4] = Entity(Kind.WATER, "\U0001f30a", 0)
         passables = small_grid.passable_neighbors(5, 5)
         assert (4, 5) not in passables
 
@@ -241,7 +288,7 @@ class TestTryMoveThroughPlants:
 
     def test_blocked_by_water(self, small_grid):
         e = make_carn([ALL_CARNIVORES[0][0]])
-        water = Entity(Kind.WATER, "\U0001F30A", 0)
+        water = Entity(Kind.WATER, "\U0001f30a", 0)
         small_grid.cells[5][5] = e
         small_grid.cells[5][6] = water
         assert not try_move_through_plants(small_grid, 5, 5, e, 6, 5)
@@ -270,8 +317,8 @@ class TestSparkline:
 
 class TestSpeciesOf:
     def test_known_emoji(self):
-        assert species_of("\U0001F430") == "rabbit"
-        assert species_of("\U0001F981") == "lion"
+        assert species_of("\U0001f430") == "rabbit"
+        assert species_of("\U0001f981") == "lion"
 
     def test_unknown_emoji(self):
         assert species_of("?") == "animal"
@@ -532,7 +579,7 @@ class TestSimulation:
         state.grid.cells[2][3] = plant
         initial_energy = herb.energy
         step(state, [])
-        assert herb.energy >= initial_energy
+        assert herb.energy > initial_energy
 
     def test_herbivore_starves_without_food(self, state):
         state.grid = Grid(5, 5)
@@ -594,8 +641,7 @@ class TestSimulation:
         for y in range(4):
             for x in range(4):
                 if (x, y) not in [(1, 1), (2, 1)]:
-                    state.grid.cells[y][x] = Entity(
-                        Kind.WATER, "\U0001F30A", 0, species="water")
+                    state.grid.cells[y][x] = Entity(Kind.WATER, "\U0001f30a", 0, species="water")
         state.grid.cells[1][1] = e1
         state.grid.cells[1][2] = e2
         state.config.disease_spread_chance = 1.0
@@ -610,12 +656,9 @@ class TestSimulation:
         herb.energy = 1
         state.grid.cells[1][1] = herb
         for nx, ny in state.grid.neighbors(1, 1):
-            state.grid.cells[ny][nx] = Entity(Kind.WATER, "\U0001F30A", 0, species="water")
+            state.grid.cells[ny][nx] = Entity(Kind.WATER, "\U0001f30a", 0, species="water")
         step(state, [])
-        total_nutrients = sum(
-            state.grid.nutrients[y][x]
-            for y in range(3) for x in range(3)
-        )
+        total_nutrients = sum(state.grid.nutrients[y][x] for y in range(3) for x in range(3))
         assert total_nutrients > 0
 
     def test_water_drinking_resets_thirst(self, state):
@@ -624,7 +667,7 @@ class TestSimulation:
         herb = make_herb(herbs)
         herb.thirst = 20
         herb.energy = 100
-        water = Entity(Kind.WATER, "\U0001F30A", 0, species="water")
+        water = Entity(Kind.WATER, "\U0001f30a", 0, species="water")
         state.grid.cells[2][2] = herb
         state.grid.cells[2][3] = water
         step(state, [])
@@ -643,7 +686,7 @@ class TestSimulation:
     def test_seasons_change(self, state):
         state.config.season_length = 5
         seasons_seen = set()
-        for i in range(20):
+        for _i in range(20):
             step(state, [])
             seasons_seen.add(state.season)
         assert state.season == ((state.tick - 1) // 5) % 4
@@ -689,10 +732,8 @@ class TestSimulation:
             step(state, [])
         herbs_after = count_by_species(state.grid, Kind.HERBIVORE)
         species_present = set(herbs_after.keys())
-        assert "rabbit" in species_present, \
-            f"Expected rabbits to survive, got {species_present}"
-        assert species_present == {"rabbit"}, \
-            f"Expected only rabbits, got {species_present}"
+        assert "rabbit" in species_present, f"Expected rabbits to survive, got {species_present}"
+        assert species_present == {"rabbit"}, f"Expected only rabbits, got {species_present}"
 
     def test_carn_offspring_inherit_parent_species(self, state):
         state.grid = Grid(10, 10)
@@ -706,10 +747,8 @@ class TestSimulation:
             step(state, [])
         carns_after = count_by_species(state.grid, Kind.CARNIVORE)
         species_present = set(carns_after.keys())
-        assert "lion" in species_present, \
-            f"Expected lions to survive, got {species_present}"
-        assert species_present == {"lion"}, \
-            f"Expected only lions, got {species_present}"
+        assert "lion" in species_present, f"Expected lions to survive, got {species_present}"
+        assert species_present == {"lion"}, f"Expected only lions, got {species_present}"
 
     def test_make_herb_of_species(self):
         e = make_herb_of_species("rabbit")
@@ -754,14 +793,13 @@ class TestSimulation:
         state.grid.cells[2][2] = e1
         state.grid.cells[2][3] = e2
         if e1.traits.pack_bonus > 0:
-            effective = e1.traits.repro_threshold * (
-                1.0 - e1.traits.pack_bonus * 1)
+            effective = e1.traits.repro_threshold * (1.0 - e1.traits.pack_bonus * 1)
             assert effective < e1.traits.repro_threshold
 
     def test_intra_carnivore_predation(self, state):
         state.grid = Grid(5, 5)
-        bear_emoji = "\U0001F43B"
-        snake_emoji = "\U0001F40D"
+        bear_emoji = "\U0001f43b"
+        snake_emoji = "\U0001f40d"
         bear = make_carn([bear_emoji])
         snake = make_carn([snake_emoji])
         bear.energy = 10
@@ -778,8 +816,8 @@ class TestSimulation:
 
     def test_any_carn_eats_other_carn_species(self, state):
         state.grid = Grid(5, 5)
-        lion_emoji = "\U0001F981"
-        fox_emoji = "\U0001F98A"
+        lion_emoji = "\U0001f981"
+        fox_emoji = "\U0001f98a"
         lion = make_carn([lion_emoji])
         fox = make_carn([fox_emoji])
         lion.energy = 5
@@ -796,7 +834,7 @@ class TestSimulation:
 
     def test_cannibalism_when_dire(self, state):
         state.grid = Grid(5, 5)
-        lion_emoji = "\U0001F981"
+        lion_emoji = "\U0001f981"
         lion1 = make_carn([lion_emoji])
         lion2 = make_carn([lion_emoji])
         lion1.energy = 3
@@ -812,7 +850,7 @@ class TestSimulation:
 
     def test_no_cannibalism_when_well_fed(self, state):
         state.grid = Grid(5, 5)
-        lion_emoji = "\U0001F981"
+        lion_emoji = "\U0001f981"
         lion1 = make_carn([lion_emoji])
         lion2 = make_carn([lion_emoji])
         lion1.energy = lion1.traits.max_energy - 1
@@ -821,9 +859,11 @@ class TestSimulation:
         state.grid.cells[2][3] = lion2
         events = []
         step(state, events)
-        carn_kills = [e for e in events if e["kind"] == "carn_kill"
-                      and e.get("predator_species") == "lion"
-                      and e.get("prey_species") == "lion"]
+        carn_kills = [
+            e
+            for e in events
+            if e["kind"] == "carn_kill" and e.get("predator_species") == "lion" and e.get("prey_species") == "lion"
+        ]
         assert len(carn_kills) == 0
 
     def test_plant_dies_of_old_age(self, state):
@@ -852,7 +892,7 @@ class TestSimulation:
 
     def test_step_handles_water_only(self, state):
         state.grid = Grid(5, 5)
-        state.grid.cells[0][0] = Entity(Kind.WATER, "\U0001F30A", 0, species="water")
+        state.grid.cells[0][0] = Entity(Kind.WATER, "\U0001f30a", 0, species="water")
         step(state, [])
         assert state.grid.cells[0][0] is not None
         assert state.grid.cells[0][0].kind == Kind.WATER
@@ -872,7 +912,7 @@ class TestCountPop:
     def test_mixed_grid(self, small_grid):
         small_grid.cells[0][0] = make_plant()
         small_grid.cells[0][1] = make_herb([ALL_HERBIVORES[0][0]])
-        small_grid.cells[0][2] = Entity(Kind.WATER, "\U0001F30A", 0, species="water")
+        small_grid.cells[0][2] = Entity(Kind.WATER, "\U0001f30a", 0, species="water")
         counts = count_pop(small_grid)
         assert counts[Kind.PLANT] == 1
         assert counts[Kind.HERBIVORE] == 1
@@ -932,130 +972,95 @@ class TestPopulate:
 
 
 class TestSaveLoad:
-    def test_save_creates_file(self, state):
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            filepath = f.name
-        try:
-            result = save_state(state, filepath)
-            assert result
-            assert os.path.exists(filepath)
-            with open(filepath) as f:
-                data = json.load(f)
-            assert "tick" in data
-            assert "grid" in data
-            assert "config" in data
-        finally:
-            if os.path.exists(filepath):
-                os.remove(filepath)
+    def test_save_creates_file(self, state, tmp_path):
+        filepath = str(tmp_path / "save.json")
+        result = save_state(state, filepath)
+        assert result
+        assert os.path.exists(filepath)
+        with open(filepath) as f:
+            data = json.load(f)
+        assert "tick" in data
+        assert "grid" in data
+        assert "config" in data
 
-    def test_load_returns_state(self, state):
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            filepath = f.name
-        try:
-            state.tick = 42
-            state.selected_herbs = [ALL_HERBIVORES[0][0]]
-            state.selected_carns = [ALL_CARNIVORES[0][0]]
-            save_state(state, filepath)
-            loaded = load_state(filepath)
-            assert loaded is not None
-            assert loaded.tick == 42
-            assert loaded.selected_herbs == [ALL_HERBIVORES[0][0]]
-            assert loaded.selected_carns == [ALL_CARNIVORES[0][0]]
-        finally:
-            if os.path.exists(filepath):
-                os.remove(filepath)
+    def test_load_returns_state(self, state, tmp_path):
+        filepath = str(tmp_path / "save.json")
+        state.tick = 42
+        state.selected_herbs = [ALL_HERBIVORES[0][0]]
+        state.selected_carns = [ALL_CARNIVORES[0][0]]
+        save_state(state, filepath)
+        loaded = load_state(filepath)
+        assert loaded is not None
+        assert loaded.tick == 42
+        assert loaded.selected_herbs == [ALL_HERBIVORES[0][0]]
+        assert loaded.selected_carns == [ALL_CARNIVORES[0][0]]
 
-    def test_save_load_roundtrip_preserves_grid(self, state):
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            filepath = f.name
-        try:
-            populate(state.grid, state.config, state.selected_herbs, state.selected_carns)
-            original_counts = count_pop(state.grid)
-            save_state(state, filepath)
-            loaded = load_state(filepath)
-            assert loaded is not None
-            loaded_counts = count_pop(loaded.grid)
-            assert loaded_counts == original_counts
-        finally:
-            if os.path.exists(filepath):
-                os.remove(filepath)
+    def test_save_load_roundtrip_preserves_grid(self, state, tmp_path):
+        filepath = str(tmp_path / "save.json")
+        populate(state.grid, state.config, state.selected_herbs, state.selected_carns)
+        original_counts = count_pop(state.grid)
+        save_state(state, filepath)
+        loaded = load_state(filepath)
+        assert loaded is not None
+        loaded_counts = count_pop(loaded.grid)
+        assert loaded_counts == original_counts
 
-    def test_save_load_preserves_nutrients(self, state):
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            filepath = f.name
-        try:
-            state.grid.add_nutrients(5, 5, 7.5)
-            save_state(state, filepath)
-            loaded = load_state(filepath)
-            assert loaded is not None
-            assert abs(loaded.grid.nutrients[5][5] - 7.5) < 0.01
-        finally:
-            if os.path.exists(filepath):
-                os.remove(filepath)
+    def test_save_load_preserves_nutrients(self, state, tmp_path):
+        filepath = str(tmp_path / "save.json")
+        state.grid.add_nutrients(5, 5, 7.5)
+        save_state(state, filepath)
+        loaded = load_state(filepath)
+        assert loaded is not None
+        assert abs(loaded.grid.nutrients[5][5] - 7.5) < 0.01
 
-    def test_save_load_preserves_entity_state(self, state):
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            filepath = f.name
-        try:
-            herbs = [ALL_HERBIVORES[0][0]]
-            e = make_herb(herbs)
-            e.energy = 25
-            e.age = 10
-            e.thirst = 15
-            e.diseased = 5
-            state.grid.cells[5][5] = e
-            save_state(state, filepath)
-            loaded = load_state(filepath)
-            assert loaded is not None
-            le = loaded.grid.get(5, 5)
-            assert le is not None
-            assert le.energy == 25
-            assert le.age == 10
-            assert le.thirst == 15
-            assert le.diseased == 5
-            assert le.species == e.species
-            assert le.traits is not None
-        finally:
-            if os.path.exists(filepath):
-                os.remove(filepath)
+    def test_save_load_preserves_entity_state(self, state, tmp_path):
+        filepath = str(tmp_path / "save.json")
+        herbs = [ALL_HERBIVORES[0][0]]
+        e = make_herb(herbs)
+        e.energy = 25
+        e.age = 10
+        e.thirst = 15
+        e.diseased = 5
+        state.grid.cells[5][5] = e
+        save_state(state, filepath)
+        loaded = load_state(filepath)
+        assert loaded is not None
+        le = loaded.grid.get(5, 5)
+        assert le is not None
+        assert le.energy == 25
+        assert le.age == 10
+        assert le.thirst == 15
+        assert le.diseased == 5
+        assert le.species == e.species
+        assert le.traits is not None
 
-    def test_save_load_preserves_stats(self, state):
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            filepath = f.name
-        try:
-            state.stats.total_births = 10
-            state.stats.total_kills = 5
-            state.stats.peak_plants = 100
-            state.stats.death_ages = [10, 20, 30]
-            save_state(state, filepath)
-            loaded = load_state(filepath)
-            assert loaded is not None
-            assert loaded.stats.total_births == 10
-            assert loaded.stats.total_kills == 5
-            assert loaded.stats.peak_plants == 100
-            assert loaded.stats.death_ages == [10, 20, 30]
-        finally:
-            if os.path.exists(filepath):
-                os.remove(filepath)
+    def test_save_load_preserves_stats(self, state, tmp_path):
+        filepath = str(tmp_path / "save.json")
+        state.stats.total_births = 10
+        state.stats.total_kills = 5
+        state.stats.peak_plants = 100
+        state.stats.death_ages = [10, 20, 30]
+        save_state(state, filepath)
+        loaded = load_state(filepath)
+        assert loaded is not None
+        assert loaded.stats.total_births == 10
+        assert loaded.stats.total_kills == 5
+        assert loaded.stats.peak_plants == 100
+        assert loaded.stats.death_ages == [10, 20, 30]
 
     def test_load_nonexistent_returns_none(self):
         result = load_state("/nonexistent/path/file.json")
         assert result is None
 
-    def test_save_load_preserves_config(self, state):
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            filepath = f.name
-        try:
-            state.config.plant_spread_chance = 0.15
-            state.config.season_length = 75
-            save_state(state, filepath)
-            loaded = load_state(filepath)
-            assert loaded is not None
-            assert loaded.config.plant_spread_chance == 0.15
-            assert loaded.config.season_length == 75
-        finally:
-            if os.path.exists(filepath):
-                os.remove(filepath)
+    def test_save_load_preserves_config(self, state, tmp_path):
+        filepath = str(tmp_path / "save.json")
+        state.config.plant_spread_chance = 0.15
+        state.config.season_length = 75
+        save_state(state, filepath)
+        loaded = load_state(filepath)
+        assert loaded is not None
+        assert loaded.config.plant_spread_chance == 0.15
+        assert loaded.config.season_length == 75
 
 
 # -- Event formatting tests ------------------------------------------------
@@ -1063,11 +1068,17 @@ class TestSaveLoad:
 
 class TestEventFormatting:
     def test_kill_event(self):
-        ev = make_event("kill", 1, 2,
-                        predator_emoji="\U0001F981", predator_name="Leo",
-                        predator_species="lion",
-                        prey_emoji="\U0001F430", prey_name="Bugs",
-                        prey_species="rabbit")
+        ev = make_event(
+            "kill",
+            1,
+            2,
+            predator_emoji="\U0001f981",
+            predator_name="Leo",
+            predator_species="lion",
+            prey_emoji="\U0001f430",
+            prey_name="Bugs",
+            prey_species="rabbit",
+        )
         msg = event_to_message(ev)
         assert "Leo" in msg
         assert "Bugs" in msg
@@ -1075,44 +1086,50 @@ class TestEventFormatting:
         assert "rabbit" in msg
 
     def test_birth_event(self):
-        ev = make_event("birth", 1, 2,
-                        emoji="\U0001F430", name="Junior",
-                        species="rabbit",
-                        parent_name="Mama", parent_emoji="\U0001F430")
+        ev = make_event(
+            "birth",
+            1,
+            2,
+            emoji="\U0001f430",
+            name="Junior",
+            species="rabbit",
+            parent_name="Mama",
+            parent_emoji="\U0001f430",
+        )
         msg = event_to_message(ev)
         assert "Junior" in msg
         assert "Mama" in msg
 
     def test_starve_event(self):
-        ev = make_event("starve", 1, 2,
-                        emoji="\U0001F430", name="Hungry",
-                        species="rabbit")
+        ev = make_event("starve", 1, 2, emoji="\U0001f430", name="Hungry", species="rabbit")
         msg = event_to_message(ev)
         assert "Hungry" in msg
         assert "starved" in msg
 
     def test_age_death_event(self):
-        ev = make_event("age_death", 1, 2,
-                        emoji="\U0001F430", name="Old",
-                        species="rabbit")
+        ev = make_event("age_death", 1, 2, emoji="\U0001f430", name="Old", species="rabbit")
         msg = event_to_message(ev)
         assert "Old" in msg
         assert "old age" in msg
 
     def test_disease_death_event(self):
-        ev = make_event("disease_death", 1, 2,
-                        emoji="\U0001F430", name="Sickly",
-                        species="rabbit")
+        ev = make_event("disease_death", 1, 2, emoji="\U0001f430", name="Sickly", species="rabbit")
         msg = event_to_message(ev)
         assert "Sickly" in msg
         assert "disease" in msg
 
     def test_carn_kill_event(self):
-        ev = make_event("carn_kill", 1, 2,
-                        predator_emoji="\U0001F43B", predator_name="Bear",
-                        predator_species="bear",
-                        prey_emoji="\U0001F40D", prey_name="Slithery",
-                        prey_species="snake")
+        ev = make_event(
+            "carn_kill",
+            1,
+            2,
+            predator_emoji="\U0001f43b",
+            predator_name="Bear",
+            predator_species="bear",
+            prey_emoji="\U0001f40d",
+            prey_name="Slithery",
+            prey_species="snake",
+        )
         msg = event_to_message(ev)
         assert "Bear" in msg
         assert "Slithery" in msg
@@ -1157,8 +1174,11 @@ class TestParamTuning:
         assert config.plant_spread_chance <= 0.30
 
     def test_adjust_param_invalid_idx(self, config):
+        original = config.plant_spread_chance
         _adjust_param(config, -1, 1)
+        assert config.plant_spread_chance == original
         _adjust_param(config, 999, 1)
+        assert config.plant_spread_chance == original
 
 
 # -- Season tests ----------------------------------------------------------
@@ -1213,7 +1233,7 @@ class TestEnergyConservation:
         state.grid.cells[2][3] = plant
         initial = herb.energy
         step(state, [])
-        assert herb.energy >= initial
+        assert herb.energy > initial
 
     def test_herbivore_loses_energy_without_food(self, state):
         state.grid = Grid(5, 5)
@@ -1237,8 +1257,9 @@ class TestEnergyConservation:
         initial = carn.energy
         events = []
         step(state, events)
-        if any(e["kind"] == "kill" for e in events):
-            assert carn.energy > initial
+        kill_events = [e for e in events if e["kind"] == "kill"]
+        assert len(kill_events) == 1
+        assert carn.energy > initial
 
     def test_reproduction_costs_energy(self, state):
         state.grid = Grid(5, 5)
@@ -1273,6 +1294,7 @@ class TestIntegration:
         for _ in range(100):
             events = []
             step(state, events)
+        assert state.tick == 100
 
     def test_long_run_with_seed_reproducible(self):
         random.seed(123)
@@ -1316,69 +1338,41 @@ class TestIntegration:
 
 
 class TestCustomSpeciesStorage:
-    def test_add_and_remove_custom_species(self, tmp_path):
-        import emoji_zoo as ez
-        orig = ez.CUSTOM_SPECIES_FILE
-        ez.CUSTOM_SPECIES_FILE = str(tmp_path / "custom.json")
-        try:
-            traits = SpeciesTraits(speed=2, vision=7, max_age=150, color="\033[96m")
-            assert add_custom_species("foxaroo", "\U0001F99C", "herbivore", traits)
-            assert "foxaroo" in CUSTOM_TRAITS_BY_KIND["herbivore"]
-            assert len(CUSTOM_HERBIVORES) == 1
+    def test_add_and_remove_custom_species(self, custom_species_env):
+        traits = SpeciesTraits(speed=2, vision=7, max_age=150, color="\033[96m")
+        assert add_custom_species("foxaroo", "\U0001f99c", "herbivore", traits)
+        assert "foxaroo" in CUSTOM_TRAITS_BY_KIND["herbivore"]
+        assert len(CUSTOM_HERBIVORES) == 1
 
-            assert remove_custom_species("foxaroo")
-            assert "foxaroo" not in CUSTOM_TRAITS_BY_KIND["herbivore"]
-            assert len(CUSTOM_HERBIVORES) == 0
-        finally:
-            ez.CUSTOM_SPECIES_FILE = orig
-            CUSTOM_TRAITS_BY_KIND["herbivore"].clear()
-            CUSTOM_TRAITS_BY_KIND["carnivore"].clear()
-            CUSTOM_HERBIVORES.clear()
-            CUSTOM_CARNIVORES.clear()
+        assert remove_custom_species("foxaroo")
+        assert "foxaroo" not in CUSTOM_TRAITS_BY_KIND["herbivore"]
+        assert len(CUSTOM_HERBIVORES) == 0
 
-    def test_save_and_load_roundtrip(self, tmp_path):
-        import emoji_zoo as ez
-        orig = ez.CUSTOM_SPECIES_FILE
-        ez.CUSTOM_SPECIES_FILE = str(tmp_path / "custom.json")
-        try:
-            traits = SpeciesTraits(speed=1, vision=5, max_age=100)
-            add_custom_species("blobfish", "\U0001F419", "carnivore", traits)
-            assert save_custom_species()
+    def test_save_and_load_roundtrip(self, custom_species_env):
+        traits = SpeciesTraits(speed=1, vision=5, max_age=100)
+        add_custom_species("blobfish", "\U0001f419", "carnivore", traits)
+        assert save_custom_species()
 
-            CUSTOM_TRAITS_BY_KIND["carnivore"].clear()
-            CUSTOM_CARNIVORES.clear()
-            ez._CUSTOM_SPECIES_DATA.clear()
+        CUSTOM_TRAITS_BY_KIND["carnivore"].clear()
+        CUSTOM_CARNIVORES.clear()
 
-            load_custom_species()
-            assert "blobfish" in CUSTOM_TRAITS_BY_KIND["carnivore"]
-            loaded_traits = CUSTOM_TRAITS_BY_KIND["carnivore"]["blobfish"]
-            assert loaded_traits.speed == 1
-            assert loaded_traits.vision == 5
-            assert loaded_traits.max_age == 100
-            assert len(CUSTOM_CARNIVORES) == 1
-        finally:
-            ez.CUSTOM_SPECIES_FILE = orig
-            CUSTOM_TRAITS_BY_KIND["herbivore"].clear()
-            CUSTOM_TRAITS_BY_KIND["carnivore"].clear()
-            CUSTOM_HERBIVORES.clear()
-            CUSTOM_CARNIVORES.clear()
-            ez._CUSTOM_SPECIES_DATA.clear()
+        load_custom_species()
+        assert "blobfish" in CUSTOM_TRAITS_BY_KIND["carnivore"]
+        loaded_traits = CUSTOM_TRAITS_BY_KIND["carnivore"]["blobfish"]
+        assert loaded_traits.speed == 1
+        assert loaded_traits.vision == 5
+        assert loaded_traits.max_age == 100
+        assert len(CUSTOM_CARNIVORES) == 1
 
-    def test_load_nonexistent_file(self):
-        import emoji_zoo as ez
-        orig = ez.CUSTOM_SPECIES_FILE
-        ez.CUSTOM_SPECIES_FILE = "/tmp/nonexistent_emoji_zoo_test.json"
-        try:
-            load_custom_species()
-            assert len(CUSTOM_HERBIVORES) == 0
-            assert len(CUSTOM_CARNIVORES) == 0
-        finally:
-            ez.CUSTOM_SPECIES_FILE = orig
+    def test_load_nonexistent_file(self, custom_species_env):
+        load_custom_species()
+        assert len(CUSTOM_HERBIVORES) == 0
+        assert len(CUSTOM_CARNIVORES) == 0
 
     def test_add_invalid_species_fails(self):
-        assert not add_custom_species("", "\U0001F430", "herbivore", SpeciesTraits())
+        assert not add_custom_species("", "\U0001f430", "herbivore", SpeciesTraits())
         assert not add_custom_species("x", "", "herbivore", SpeciesTraits())
-        assert not add_custom_species("x", "\U0001F430", "invalid", SpeciesTraits())
+        assert not add_custom_species("x", "\U0001f430", "invalid", SpeciesTraits())
 
     def test_remove_nonexistent_species_fails(self):
         assert not remove_custom_species("no_such_species")
@@ -1404,8 +1398,7 @@ class TestRollTraits:
     def test_roll_traits_returns_different_results(self):
         t1 = roll_traits("herbivore")
         t2 = roll_traits("herbivore")
-        assert not (t1.vision == t2.vision and t1.max_age == t2.max_age
-                    and t1.speed == t2.speed)
+        assert not (t1.vision == t2.vision and t1.max_age == t2.max_age and t1.speed == t2.speed)
 
 
 class TestGetTraitsCustom:
@@ -1431,7 +1424,7 @@ class TestMakeHerbCarnCustom:
     def test_make_herb_with_custom_emoji(self):
         custom = SpeciesTraits(start_energy=5, color="\033[96m")
         CUSTOM_TRAITS_BY_KIND["herbivore"]["blobcat"] = custom
-        emoji = "\U0001F431"
+        emoji = "\U0001f431"
         EMOJI_TO_SPECIES[emoji] = "blobcat"
         try:
             e = make_herb([emoji])
@@ -1446,7 +1439,7 @@ class TestMakeHerbCarnCustom:
     def test_make_carn_with_custom_emoji(self):
         custom = SpeciesTraits(start_energy=99, color="\033[91m")
         CUSTOM_TRAITS_BY_KIND["carnivore"]["deathbug"] = custom
-        emoji = "\U0001F41B"
+        emoji = "\U0001f41b"
         EMOJI_TO_SPECIES[emoji] = "deathbug"
         try:
             e = make_carn([emoji])
@@ -1462,27 +1455,39 @@ class TestMakeHerbCarnCustom:
 class TestEntityDictCustom:
     def test_entity_to_dict_embeds_custom_traits(self):
         custom = SpeciesTraits(speed=2, vision=7)
-        e = Entity(Kind.HERBIVORE, "\U0001F431", 10, species="blobcat", traits=custom)
+        e = Entity(Kind.HERBIVORE, "\U0001f431", 10, species="blobcat", traits=custom)
         d = _entity_to_dict(e)
         assert "traits" in d
         assert d["traits"]["speed"] == 2
 
     def test_entity_to_dict_no_traits_for_builtin(self):
-        e = Entity(Kind.HERBIVORE, "\U0001F430", 10,
-                   species="rabbit", traits=HERBIVORE_TRAITS["rabbit"])
+        e = Entity(Kind.HERBIVORE, "\U0001f430", 10, species="rabbit", traits=HERBIVORE_TRAITS["rabbit"])
         d = _entity_to_dict(e)
         assert "traits" not in d
 
     def test_dict_to_entity_with_embedded_traits(self):
         d = {
-            "kind": "HERBIVORE", "emoji": "\U0001F431", "energy": 10,
-            "species": "blobcat", "thirst": 0, "diseased": 0,
-            "traits": {"speed": 2, "vision": 7, "flee_vision": 3,
-                       "start_energy": 10, "max_energy": 25,
-                       "eat_energy": 8, "repro_threshold": 20,
-                       "repro_cost": 8, "max_age": 150,
-                       "max_neighbors": 2, "pack_bonus": 0.1,
-                       "can_hunt_carns": False, "color": ""},
+            "kind": "HERBIVORE",
+            "emoji": "\U0001f431",
+            "energy": 10,
+            "species": "blobcat",
+            "thirst": 0,
+            "diseased": 0,
+            "traits": {
+                "speed": 2,
+                "vision": 7,
+                "flee_vision": 3,
+                "start_energy": 10,
+                "max_energy": 25,
+                "eat_energy": 8,
+                "repro_threshold": 20,
+                "repro_cost": 8,
+                "max_age": 150,
+                "max_neighbors": 2,
+                "pack_bonus": 0.1,
+                "can_hunt_carns": False,
+                "color": "",
+            },
         }
         e = _dict_to_entity(d)
         assert e.species == "blobcat"
@@ -1493,8 +1498,12 @@ class TestEntityDictCustom:
         CUSTOM_TRAITS_BY_KIND["carnivore"]["sneak"] = SpeciesTraits(speed=3)
         try:
             d = {
-                "kind": "CARNIVORE", "emoji": "\U0001F43D", "energy": 14,
-                "species": "sneak", "thirst": 0, "diseased": 0,
+                "kind": "CARNIVORE",
+                "emoji": "\U0001f43d",
+                "energy": 14,
+                "species": "sneak",
+                "thirst": 0,
+                "diseased": 0,
             }
             e = _dict_to_entity(d)
             assert e.traits.speed == 3
@@ -1506,22 +1515,15 @@ class TestUpdateEmojiMaps:
     def test_update_emoji_maps_adds_custom(self):
         CUSTOM_HERBIVORES.clear()
         CUSTOM_CARNIVORES.clear()
-        CUSTOM_HERBIVORES.append(("\U0001F431", "z", "blobcat"))
+        CUSTOM_HERBIVORES.append(("\U0001f431", "z", "blobcat"))
         try:
             update_emoji_maps()
-            assert EMOJI_TO_SPECIES.get("\U0001F431") == "blobcat"
-            assert _SPECIES_TO_EMOJI.get("blobcat") == "\U0001F431"
+            assert EMOJI_TO_SPECIES.get("\U0001f431") == "blobcat"
+            assert _SPECIES_TO_EMOJI.get("blobcat") == "\U0001f431"
         finally:
             CUSTOM_HERBIVORES.clear()
-            EMOJI_TO_SPECIES.pop("\U0001F431", None)
+            EMOJI_TO_SPECIES.pop("\U0001f431", None)
             _SPECIES_TO_EMOJI.pop("blobcat", None)
-
-
-class TestCustomKeyBindings:
-    def test_builds_bindings(self):
-        bindings = _build_custom_key_bindings()
-        assert len(bindings) > 0
-        assert all(len(k) == 1 for k in bindings)
 
 
 class TestCustomEmojiGrid:
@@ -1529,81 +1531,64 @@ class TestCustomEmojiGrid:
         assert len(CUSTOM_EMOJI_GRID) > 0
         for row in CUSTOM_EMOJI_GRID:
             assert len(row) > 0
-            for emoji, label in row:
+            for emoji, _label in row:
                 if emoji:
                     assert isinstance(emoji, str)
 
 
 class TestCustomSpeciesInSimulation:
-    def test_custom_species_survives_simulation(self, tmp_path):
-        import emoji_zoo as ez
-        orig = ez.CUSTOM_SPECIES_FILE
-        ez.CUSTOM_SPECIES_FILE = str(tmp_path / "custom.json")
-        try:
-            traits = SpeciesTraits(
-                speed=1, vision=5, flee_vision=3, start_energy=14,
-                max_energy=35, eat_energy=10, repro_threshold=30,
-                repro_cost=14, max_age=200, pack_bonus=0.1,
-            )
-            add_custom_species("testherb", "\U0001F431", "herbivore", traits)
+    def test_custom_species_survives_simulation(self, custom_species_env):
+        traits = SpeciesTraits(
+            speed=1,
+            vision=5,
+            flee_vision=3,
+            start_energy=14,
+            max_energy=35,
+            eat_energy=10,
+            repro_threshold=30,
+            repro_cost=14,
+            max_age=200,
+            pack_bonus=0.1,
+        )
+        add_custom_species("testherb", "\U0001f431", "herbivore", traits)
 
-            grid = Grid(10, 10)
-            cfg = make_config("balanced")
-            herbs = ["\U0001F431"]
-            carns = []
-            populate(grid, cfg, herbs, carns)
-            state = GameState(grid=grid, config=cfg,
-                              selected_herbs=herbs, selected_carns=carns)
+        grid = Grid(10, 10)
+        cfg = make_config("balanced")
+        herbs = ["\U0001f431"]
+        carns = []
+        populate(grid, cfg, herbs, carns)
+        state = GameState(grid=grid, config=cfg, selected_herbs=herbs, selected_carns=carns)
 
-            for _ in range(50):
-                step(state, [])
-
-            assert state.tick == 50
-        finally:
-            ez.CUSTOM_SPECIES_FILE = orig
-            CUSTOM_TRAITS_BY_KIND["herbivore"].clear()
-            CUSTOM_TRAITS_BY_KIND["carnivore"].clear()
-            CUSTOM_HERBIVORES.clear()
-            CUSTOM_CARNIVORES.clear()
-            ez._CUSTOM_SPECIES_DATA.clear()
-
-    def test_save_load_with_custom_species(self, tmp_path):
-        import emoji_zoo as ez
-        orig = ez.CUSTOM_SPECIES_FILE
-        ez.CUSTOM_SPECIES_FILE = str(tmp_path / "custom.json")
-        save_path = str(tmp_path / "game.json")
-        try:
-            traits = SpeciesTraits(start_energy=12, max_energy=30, max_age=100)
-            add_custom_species("sparkle", "\u2728", "herbivore", traits)
-
-            grid = Grid(8, 8)
-            cfg = make_config("balanced")
-            herbs = ["\u2728"]
-            entity = make_herb_of_species("sparkle")
-            assert entity is not None
-            grid.cells[0][0] = entity
-            state = GameState(grid=grid, config=cfg,
-                              selected_herbs=herbs, selected_carns=[])
+        for _ in range(50):
             step(state, [])
 
-            assert save_state(state, save_path)
-            loaded = load_state(save_path)
-            assert loaded is not None
-            assert loaded.tick == 1
+        assert state.tick == 50
 
-            sparkle_cells = 0
-            for y in range(loaded.grid.h):
-                for x in range(loaded.grid.w):
-                    e = loaded.grid.cells[y][x]
-                    if e and e.species == "sparkle":
-                        sparkle_cells += 1
-                        assert e.traits is not None
-                        assert e.traits.start_energy == 12
-            assert sparkle_cells > 0
-        finally:
-            ez.CUSTOM_SPECIES_FILE = orig
-            CUSTOM_TRAITS_BY_KIND["herbivore"].clear()
-            CUSTOM_TRAITS_BY_KIND["carnivore"].clear()
-            CUSTOM_HERBIVORES.clear()
-            CUSTOM_CARNIVORES.clear()
-            ez._CUSTOM_SPECIES_DATA.clear()
+    def test_save_load_with_custom_species(self, custom_species_env):
+        save_path = str(custom_species_env / "game.json")
+        traits = SpeciesTraits(start_energy=12, max_energy=30, max_age=100)
+        add_custom_species("sparkle", "\u2728", "herbivore", traits)
+
+        grid = Grid(8, 8)
+        cfg = make_config("balanced")
+        herbs = ["\u2728"]
+        entity = make_herb_of_species("sparkle")
+        assert entity is not None
+        grid.cells[0][0] = entity
+        state = GameState(grid=grid, config=cfg, selected_herbs=herbs, selected_carns=[])
+        step(state, [])
+
+        assert save_state(state, save_path)
+        loaded = load_state(save_path)
+        assert loaded is not None
+        assert loaded.tick == 1
+
+        sparkle_cells = 0
+        for y in range(loaded.grid.h):
+            for x in range(loaded.grid.w):
+                e = loaded.grid.cells[y][x]
+                if e and e.species == "sparkle":
+                    sparkle_cells += 1
+                    assert e.traits is not None
+                    assert e.traits.start_energy == 12
+        assert sparkle_cells > 0

@@ -82,11 +82,14 @@ on by default. Press `d` to delete the most recently created custom species.
 
 ### Species Picker Controls
 
-- `1`-`8` / `q`-`i` - toggle built-in herbivores/carnivores
+The picker is mouse-driven. Click a row (or press `Enter`/`Space`) to toggle
+that species on or off.
+
+- Click row (or `Enter`/`Space`) - toggle the highlighted species on/off
+- `a` - all on, `n` - all off
 - `c` - create a new custom species
 - `d` - delete the last custom species
-- `a` - all on, `n` - all off
-- `Enter` - start the zoo
+- Start Zoo button (or `Esc`) - launch the simulation
 
 ## Architecture
 

@@ -12,8 +12,61 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "ruff>=0.8.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "F",      # Pyflakes - unused imports, undefined names, etc.
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "I",      # isort - import sorting
+    "N",      # pep8-naming
+    "UP",     # pyupgrade - modern Python patterns
+    "B",      # flake8-bugbear - common bugs
+    "SIM",    # flake8-simplify
+    "C4",     # flake8-comprehensions
+    "RET",    # flake8-return
+    "PLC",    # pylint convention
+    "PLE",    # pylint errors
+    "PLW",    # pylint warnings
+    "RUF",    # Ruff-specific rules
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "N802",   # function name should be lowercase (some Textual conventions)
+    "N803",   # argument name should be lowercase
+    "N806",   # variable in function should be lowercase
+    "N815",   # mixedCase variable in class scope
+    "B008",   # do not perform function calls in argument defaults
+    "RET504", # unnecessary assignment before return
+    "SIM108", # use ternary operator (readability preference)
+    "SIM105", # use contextlib.suppress
+    "PLC1901",# consider using nonzero check
+    "UP015",  # unnecessary open mode parameters
+    "RUF012", # Textual uses mutable class attrs (BINDINGS, CSS) by design
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "B011",    # assert False is ok in tests for some patterns
+    "PLC0415", # imports inside fixtures are standard pytest practice
+    "PLR2004", # magic values allowed in tests
+    "SIM300",  # yoda conditions ok in tests
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["emoji_zoo"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
