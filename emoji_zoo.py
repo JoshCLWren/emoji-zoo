@@ -708,8 +708,8 @@ def main():
     species_picker()
 
     ts = shutil.get_terminal_size()
-    gw = min(60, max(20, (ts.columns - 2) // 2))
-    gh = min(30, max(10, ts.lines - 18))
+    gw = min(120, max(20, (ts.columns - 2) // 2))
+    gh = min(50, max(10, ts.lines - 18))
 
     if gw < 20 or gh < 10:
         print("Terminal too small. Need at least ~42 columns and ~28 lines.")
