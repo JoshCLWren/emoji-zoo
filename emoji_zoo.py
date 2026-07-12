@@ -71,20 +71,39 @@ DROP_CARN_N = 3
 PLANT_STAGES = ["🌱", "🌿", "🍀", "🌾"]
 
 ALL_HERBIVORES = [
-    ("🐰", "1"), ("🐑", "2"), ("🦌", "3"), ("🐄", "4"),
-    ("🐐", "5"), ("🐇", "6"), ("🐷", "7"), ("🐎", "8"),
+    ("🐰", "1", "rabbit"), ("🐑", "2", "sheep"), ("🦌", "3", "deer"), ("🐄", "4", "cow"),
+    ("🐐", "5", "goat"), ("🐇", "6", "bunny"), ("🐷", "7", "pig"), ("🐎", "8", "horse"),
 ]
 ALL_CARNIVORES = [
-    ("🦁", "q"), ("🐺", "w"), ("🦊", "e"), ("🐻", "r"),
-    ("🐯", "t"), ("🦅", "y"), ("🐍", "u"), ("🐊", "i"),
+    ("🦁", "q", "lion"), ("🐺", "w", "wolf"), ("🦊", "e", "fox"), ("🐻", "r", "bear"),
+    ("🐯", "t", "tiger"), ("🦅", "y", "eagle"), ("🐍", "u", "snake"), ("🐊", "i", "crocodile"),
 ]
 
 WATER_EMOJI = "🌊"
 EMPTY_STR = "  "
 SPARK_CHARS = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
 
-SELECTED_HERBS = [e for e, _ in ALL_HERBIVORES]
-SELECTED_CARNS = [e for e, _ in ALL_CARNIVORES]
+SELECTED_HERBS = [e for e, _, _ in ALL_HERBIVORES]
+SELECTED_CARNS = [e for e, _, _ in ALL_CARNIVORES]
+
+SPECIES_NAMES = {}
+for _, _, s in ALL_HERBIVORES:
+    SPECIES_NAMES[s] = s
+for _, _, s in ALL_CARNIVORES:
+    SPECIES_NAMES[s] = s
+
+EMOJI_TO_SPECIES = {}
+for e, _, s in ALL_HERBIVORES + ALL_CARNIVORES:
+    EMOJI_TO_SPECIES[e] = s
+
+ANIMAL_NAMES = [
+    "Bella", "Max", "Luna", "Charlie", "Lucy", "Cooper", "Daisy", "Buddy",
+    "Ruby", "Oliver", "Zoe", "Milo", "Cleo", "Theo", "Pip", "Hazel",
+    "Finn", "Willow", "Jasper", "Nala", "Shadow", "Pepper", "Bear", "Honey",
+    "Scout", "River", "Sage", "Oakley", "Maple", "Pebbles", "Biscuit", "Waffles",
+    "Pickle", "Mochi", "Dot", "Tofu", "Clover", "Ash", "Ivy", "Fern",
+    "Rocket", "Blue", "Goldie", "Pippin", "Marshmallow", "Cinnamon", "Nugget", "Cookie",
+]
 
 # -- Model ----------------------------------------------------------------
 
@@ -103,6 +122,7 @@ class Entity:
     energy: int
     growth: int = 0
     age: int = 0
+    name: str = None
 
 
 class Grid:
@@ -196,17 +216,23 @@ def sparkline(values, max_val):
     )
 
 
+def random_name():
+    return random.choice(ANIMAL_NAMES)
+
+
 def make_plant():
     g = random.randint(0, PLANT_MAX_GROWTH)
     return Entity(Kind.PLANT, PLANT_STAGES[g], 0, growth=g)
 
 
 def make_herb():
-    return Entity(Kind.HERBIVORE, random.choice(SELECTED_HERBS), HERB_START_ENERGY)
+    emoji = random.choice(SELECTED_HERBS)
+    return Entity(Kind.HERBIVORE, emoji, HERB_START_ENERGY, name=random_name())
 
 
 def make_carn():
-    return Entity(Kind.CARNIVORE, random.choice(SELECTED_CARNS), CARN_START_ENERGY)
+    emoji = random.choice(SELECTED_CARNS)
+    return Entity(Kind.CARNIVORE, emoji, CARN_START_ENERGY, name=random_name())
 
 
 def drop_creatures(grid, factory, n):
@@ -217,10 +243,21 @@ def drop_creatures(grid, factory, n):
             grid.cells[y][x] = factory()
 
 
+def species_of(emoji):
+    return EMOJI_TO_SPECIES.get(emoji, "animal")
+
+
+# -- Event tracking -------------------------------------------------------
+
+
+def make_event(kind, x, y, **kw):
+    return {"kind": kind, "x": x, "y": y, **kw}
+
+
 # -- Simulation step ------------------------------------------------------
 
 
-def step(grid):
+def step(grid, events):
     entities = []
     for y in range(grid.h):
         for x in range(grid.w):
@@ -230,24 +267,26 @@ def step(grid):
     random.shuffle(entities)
 
     births = []
+    plant_n = sum(1 for row in grid.cells for c in row if c and c.kind == Kind.PLANT)
+    plant_cap = grid.w * grid.h * PLANT_CAP_RATIO
 
     for x, y, e in entities:
         if grid.cells[y][x] is not e:
             continue
         e.age += 1
         if e.kind == Kind.PLANT:
-            _tick_plant(grid, x, y, e, births)
+            _tick_plant(grid, x, y, e, births, plant_n, plant_cap)
         elif e.kind == Kind.HERBIVORE:
-            _tick_herb(grid, x, y, e, births)
+            _tick_herb(grid, x, y, e, births, events)
         elif e.kind == Kind.CARNIVORE:
-            _tick_carn(grid, x, y, e, births)
+            _tick_carn(grid, x, y, e, births, events)
 
     for bx, by, be in births:
         if grid.cells[by][bx] is None:
             grid.cells[by][bx] = be
 
     plant_n = sum(1 for row in grid.cells for c in row if c and c.kind == Kind.PLANT)
-    if plant_n < grid.w * grid.h * PLANT_CAP_RATIO:
+    if plant_n < plant_cap:
         for _ in range(PLANT_SEED_COUNT):
             spot = grid.random_empty(50)
             if spot:
@@ -272,19 +311,18 @@ def step(grid):
                 grid.cells[y][x] = make_carn()
 
 
-def _tick_plant(grid, x, y, e, births):
+def _tick_plant(grid, x, y, e, births, plant_n, plant_cap):
     if e.growth < PLANT_MAX_GROWTH:
         e.growth += 1
         e.emoji = PLANT_STAGES[e.growth]
-    plant_n = sum(1 for row in grid.cells for c in row if c and c.kind == Kind.PLANT)
-    if plant_n < grid.w * grid.h * PLANT_CAP_RATIO and random.random() < PLANT_SPREAD_CHANCE:
+    if plant_n < plant_cap and random.random() < PLANT_SPREAD_CHANCE:
         empties = grid.empty_neighbors(x, y)
         if empties:
             nx, ny = random.choice(empties)
             births.append((nx, ny, Entity(Kind.PLANT, PLANT_STAGES[0], 0, growth=0)))
 
 
-def _tick_herb(grid, x, y, e, births):
+def _tick_herb(grid, x, y, e, births, events):
     e.energy -= 1
 
     threat = find_nearest(grid, x, y, Kind.CARNIVORE, HERB_FLEE_VISION)
@@ -328,13 +366,19 @@ def _tick_herb(grid, x, y, e, births):
             if empties:
                 nx, ny = random.choice(empties)
                 e.energy -= HERB_REPRO_COST
-                births.append((nx, ny, make_herb()))
+                baby = make_herb()
+                births.append((nx, ny, baby))
+                events.append(make_event("birth", nx, ny,
+                    emoji=baby.emoji, name=baby.name, species=species_of(baby.emoji),
+                    parent_name=e.name, parent_emoji=e.emoji))
 
     if e.energy <= 0:
         grid.cells[y][x] = None
+        events.append(make_event("starve", x, y,
+            emoji=e.emoji, name=e.name, species=species_of(e.emoji)))
 
 
-def _tick_carn(grid, x, y, e, births):
+def _tick_carn(grid, x, y, e, births, events):
     if e.age % 2 == 0:
         e.energy -= 1
 
@@ -349,6 +393,9 @@ def _tick_carn(grid, x, y, e, births):
         ax, ay, prey = adjacent_prey
         e.energy = min(e.energy + CARN_EAT_ENERGY, CARN_MAX_ENERGY)
         grid.cells[ay][ax] = None
+        events.append(make_event("kill", ax, ay,
+            predator_emoji=e.emoji, predator_name=e.name, predator_species=species_of(e.emoji),
+            prey_emoji=prey.emoji, prey_name=prey.name, prey_species=species_of(prey.emoji)))
     else:
         prey = find_nearest(grid, x, y, Kind.HERBIVORE, CARN_VISION)
         if prey:
@@ -362,6 +409,9 @@ def _tick_carn(grid, x, y, e, births):
                         if c and c.kind == Kind.HERBIVORE:
                             e.energy = min(e.energy + CARN_EAT_ENERGY, CARN_MAX_ENERGY)
                             grid.cells[ay][ax] = None
+                            events.append(make_event("kill", ax, ay,
+                                predator_emoji=e.emoji, predator_name=e.name, predator_species=species_of(e.emoji),
+                                prey_emoji=c.emoji, prey_name=c.name, prey_species=species_of(c.emoji)))
                             break
         else:
             passables = grid.passable_neighbors(x, y)
@@ -380,10 +430,16 @@ def _tick_carn(grid, x, y, e, births):
             if empties:
                 nx, ny = random.choice(empties)
                 e.energy -= CARN_REPRO_COST
-                births.append((nx, ny, make_carn()))
+                baby = make_carn()
+                births.append((nx, ny, baby))
+                events.append(make_event("birth", nx, ny,
+                    emoji=baby.emoji, name=baby.name, species=species_of(baby.emoji),
+                    parent_name=e.name, parent_emoji=e.emoji))
 
     if e.energy <= 0:
         grid.cells[y][x] = None
+        events.append(make_event("starve", x, y,
+            emoji=e.emoji, name=e.name, species=species_of(e.emoji)))
 
 
 # -- Setup ----------------------------------------------------------------
@@ -441,16 +497,16 @@ def _render_picker(herb_on, carn_on):
     lines.append("  Toggle species on/off, then press Enter to start.\033[K")
     lines.append("\033[K")
 
-    lines.append("  HERBIVORES\033[K")
-    for emoji, key in ALL_HERBIVORES:
+    lines.append("  HERBIVORES (plant eaters)\033[K")
+    for emoji, key, species in ALL_HERBIVORES:
         mark = "\033[32m\xe2\x9c\x93\033[0m" if herb_on.get(emoji, True) else "\033[31m\xe2\x9c\x97\033[0m"
-        lines.append(f"    {key}) {emoji}  [{mark}]\033[K")
+        lines.append(f"    {key}) {emoji}  {species:10s}  [{mark}]\033[K")
     lines.append("\033[K")
 
-    lines.append("  CARNIVORES\033[K")
-    for emoji, key in ALL_CARNIVORES:
+    lines.append("  CARNIVORES (hunters)\033[K")
+    for emoji, key, species in ALL_CARNIVORES:
         mark = "\033[32m\xe2\x9c\x93\033[0m" if carn_on.get(emoji, True) else "\033[31m\xe2\x9c\x97\033[0m"
-        lines.append(f"    {key}) {emoji}  [{mark}]\033[K")
+        lines.append(f"    {key}) {emoji}  {species:12s}  [{mark}]\033[K")
     lines.append("\033[K")
 
     n_h = sum(herb_on.values())
@@ -465,11 +521,11 @@ def _render_picker(herb_on, carn_on):
 def species_picker():
     global SELECTED_HERBS, SELECTED_CARNS
 
-    herb_on = {e: True for e, _ in ALL_HERBIVORES}
-    carn_on = {e: True for e, _ in ALL_CARNIVORES}
+    herb_on = {e: True for e, _, _ in ALL_HERBIVORES}
+    carn_on = {e: True for e, _, _ in ALL_CARNIVORES}
 
-    herb_keys = {k: e for e, k in ALL_HERBIVORES}
-    carn_keys = {k: e for e, k in ALL_CARNIVORES}
+    herb_keys = {k: e for e, k, _ in ALL_HERBIVORES}
+    carn_keys = {k: e for e, k, _ in ALL_CARNIVORES}
 
     old = termios.tcgetattr(sys.stdin)
     tty.setcbreak(sys.stdin.fileno())
@@ -485,11 +541,11 @@ def species_picker():
             if ch == "\r" or ch == "\n":
                 break
             elif ch == "a":
-                herb_on = {e: True for e, _ in ALL_HERBIVORES}
-                carn_on = {e: True for e, _ in ALL_CARNIVORES}
+                herb_on = {e: True for e, _, _ in ALL_HERBIVORES}
+                carn_on = {e: True for e, _, _ in ALL_CARNIVORES}
             elif ch == "n":
-                herb_on = {e: False for e, _ in ALL_HERBIVORES}
-                carn_on = {e: False for e, _ in ALL_CARNIVORES}
+                herb_on = {e: False for e, _, _ in ALL_HERBIVORES}
+                carn_on = {e: False for e, _, _ in ALL_CARNIVORES}
             elif ch in herb_keys:
                 e = herb_keys[ch]
                 herb_on[e] = not herb_on[e]
@@ -504,11 +560,30 @@ def species_picker():
     finally:
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old)
 
-    SELECTED_HERBS = [e for e, _ in ALL_HERBIVORES if herb_on[e]]
-    SELECTED_CARNS = [e for e, _ in ALL_CARNIVORES if carn_on[e]]
+    SELECTED_HERBS = [e for e, _, _ in ALL_HERBIVORES if herb_on[e]]
+    SELECTED_CARNS = [e for e, _, _ in ALL_CARNIVORES if carn_on[e]]
 
     sys.stdout.write("\033[2J\033[H")
     sys.stdout.flush()
+
+
+# -- Event formatting -----------------------------------------------------
+
+
+FLASH_EMOJIS = {"kill": "\U0001F4A5", "birth": "\u2728", "starve": "\U0001F480"}
+FLASH_COLORS = {"kill": "\033[41m", "birth": "\033[44m", "starve": "\033[100m"}
+
+
+def event_to_message(ev):
+    if ev["kind"] == "kill":
+        return (f"{ev['predator_emoji']} {ev['predator_name']} the {ev['predator_species']}"
+                f" caught {ev['prey_emoji']} {ev['prey_name']} the {ev['prey_species']}!")
+    elif ev["kind"] == "birth":
+        return (f"\u2728 {ev['parent_emoji']} {ev['parent_name']} had a baby: "
+                f"{ev['emoji']} {ev['name']} the {ev['species']}!")
+    elif ev["kind"] == "starve":
+        return (f"\U0001F480 {ev['emoji']} {ev['name']} the {ev['species']} starved")
+    return ""
 
 
 # -- Render ---------------------------------------------------------------
@@ -524,7 +599,8 @@ def count_pop(grid):
     return counts
 
 
-def render(grid, tick, paused, speed, hist, god_mode=False, cursor=(0, 0)):
+def render(grid, tick, paused, speed, hist, god_mode=False, cursor=(0, 0),
+           flashes=None, ticker=None, legend_herbs=None, legend_carns=None):
     counts = count_pop(grid)
     p = counts[Kind.PLANT]
     h = counts[Kind.HERBIVORE]
@@ -537,19 +613,39 @@ def render(grid, tick, paused, speed, hist, god_mode=False, cursor=(0, 0)):
         status = "PAUSED"
     else:
         status = "running"
+
+    if flashes is None:
+        flashes = {}
+    if ticker is None:
+        ticker = []
+    if legend_herbs is None:
+        legend_herbs = SELECTED_HERBS
+    if legend_carns is None:
+        legend_carns = SELECTED_CARNS
+
     lines = []
     lines.append(f"\033[H  Emoji Zoo  --  tick {tick:>5}  speed {speed}x  [{status}]\033[K")
+
+    herb_sample = "  ".join(legend_herbs[:5]) if legend_herbs else "(none)"
+    carn_sample = "  ".join(legend_carns[:5]) if legend_carns else "(none)"
+    lines.append(f"  \U0001F33F plants \u2192 {herb_sample} herbivores \u2192 {carn_sample} carnivores\033[K")
     lines.append("\033[K")
 
     for y in range(grid.h):
         row = ""
         for x in range(grid.w):
-            e = grid.cells[y][x]
-            content = e.emoji if e else EMPTY_STR
-            if god_mode and x == cx and y == cy:
-                row += f"\033[44m{content}\033[0m"
+            if (x, y) in flashes:
+                fkind = flashes[(x, y)]
+                femoji = FLASH_EMOJIS[fkind]
+                color = FLASH_COLORS[fkind]
+                row += f"{color}{femoji}\033[0m"
             else:
-                row += content
+                e = grid.cells[y][x]
+                content = e.emoji if e else EMPTY_STR
+                if god_mode and x == cx and y == cy:
+                    row += f"\033[44m{content}\033[0m"
+                else:
+                    row += content
         lines.append(row + "\033[K")
 
     lines.append("\033[K")
@@ -565,9 +661,21 @@ def render(grid, tick, paused, speed, hist, god_mode=False, cursor=(0, 0)):
     sh = sparkline(hist["herb"][-50:], hist_max)
     sc = sparkline(hist["carn"][-50:], hist_max)
 
-    lines.append(f"  plants      {p:>4}  {sp}\033[K")
-    lines.append(f"  herbivores  {h:>4}  {sh}\033[K")
-    lines.append(f"  carnivores  {c:>4}  {sc}\033[K")
+    lines.append(f"  \U0001F33F plants      {p:>4}  {sp}\033[K")
+    lines.append(f"  {legend_herbs[0] if legend_herbs else '?'} herbivores  {h:>4}  {sh}\033[K")
+    lines.append(f"  {legend_carns[0] if legend_carns else '?'} carnivores  {c:>4}  {sc}\033[K")
+    lines.append("\033[K")
+
+    for i in range(3):
+        idx = len(ticker) - 3 + i
+        if idx >= 0 and idx < len(ticker):
+            msg = ticker[idx]
+            if len(msg) > 70:
+                msg = msg[:67] + "..."
+            lines.append(f"  {msg}\033[K")
+        else:
+            lines.append("\033[K")
+
     lines.append("\033[K")
     lines.append("  SPACE pause  +/- speed  r reset  1/2/3 drop  g god mode  q quit\033[K")
 
@@ -609,15 +717,15 @@ def main():
         print("Run this in a terminal, not a pipe.")
         sys.exit(1)
 
+    species_picker()
+
     ts = shutil.get_terminal_size()
     gw = min(60, max(20, (ts.columns - 2) // 2))
-    gh = min(35, max(10, ts.lines - 10))
+    gh = min(30, max(10, ts.lines - 18))
 
     if gw < 20 or gh < 10:
-        print("Terminal too small. Need at least ~42 columns and ~20 lines.")
+        print("Terminal too small. Need at least ~42 columns and ~28 lines.")
         sys.exit(1)
-
-    species_picker()
 
     grid = Grid(gw, gh)
     populate(grid)
@@ -629,6 +737,8 @@ def main():
     hist = {"plant": [], "herb": [], "carn": []}
     god_mode = False
     cursor = [gw // 2, gh // 2]
+    ticker = []
+    flashes = {}
 
     old = termios.tcgetattr(sys.stdin)
     tty.setcbreak(sys.stdin.fileno())
@@ -678,6 +788,8 @@ def main():
                     populate(grid)
                     tick = 0
                     hist = {"plant": [], "herb": [], "carn": []}
+                    ticker = []
+                    flashes = {}
             else:
                 if key in ("q", "\x03"):
                     break
@@ -692,6 +804,8 @@ def main():
                     populate(grid)
                     tick = 0
                     hist = {"plant": [], "herb": [], "carn": []}
+                    ticker = []
+                    flashes = {}
                 elif key == "1":
                     drop_creatures(grid, make_plant, DROP_PLANT_N)
                 elif key == "2" and SELECTED_HERBS:
@@ -703,7 +817,8 @@ def main():
                     cursor = [gw // 2, gh // 2]
 
             if not paused:
-                step(grid)
+                events = []
+                step(grid, events)
                 tick += 1
                 c = count_pop(grid)
                 hist["plant"].append(c[Kind.PLANT])
@@ -713,7 +828,19 @@ def main():
                     if len(hist[k]) > 200:
                         hist[k] = hist[k][-200:]
 
-            render(grid, tick, paused, speed, hist, god_mode, cursor)
+                flashes = {}
+                for ev in events:
+                    flashes[(ev["x"], ev["y"])] = ev["kind"]
+                    msg = event_to_message(ev)
+                    if msg:
+                        ticker.append(msg)
+                if len(ticker) > 50:
+                    ticker = ticker[-50:]
+            else:
+                flashes = {}
+
+            render(grid, tick, paused, speed, hist, god_mode, cursor,
+                   flashes, ticker, SELECTED_HERBS, SELECTED_CARNS)
             time.sleep(base_delay / speed)
     finally:
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old)
