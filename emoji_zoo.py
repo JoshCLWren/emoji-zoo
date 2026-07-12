@@ -721,7 +721,7 @@ def main():
     tick = 0
     paused = False
     speed = 1
-    base_delay = 0.15
+    base_delay = 0.4
     hist = {"plant": [], "herb": [], "carn": []}
     god_mode = False
     cursor = [gw // 2, gh // 2]
