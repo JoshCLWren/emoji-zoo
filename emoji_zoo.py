@@ -25,6 +25,7 @@ import tty
 import shutil
 from dataclasses import dataclass
 from enum import Enum
+from faker import Faker
 
 # -- Tunable parameters ---------------------------------------------------
 
@@ -86,24 +87,11 @@ SPARK_CHARS = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
 SELECTED_HERBS = [e for e, _, _ in ALL_HERBIVORES]
 SELECTED_CARNS = [e for e, _, _ in ALL_CARNIVORES]
 
-SPECIES_NAMES = {}
-for _, _, s in ALL_HERBIVORES:
-    SPECIES_NAMES[s] = s
-for _, _, s in ALL_CARNIVORES:
-    SPECIES_NAMES[s] = s
-
 EMOJI_TO_SPECIES = {}
 for e, _, s in ALL_HERBIVORES + ALL_CARNIVORES:
     EMOJI_TO_SPECIES[e] = s
 
-ANIMAL_NAMES = [
-    "Bella", "Max", "Luna", "Charlie", "Lucy", "Cooper", "Daisy", "Buddy",
-    "Ruby", "Oliver", "Zoe", "Milo", "Cleo", "Theo", "Pip", "Hazel",
-    "Finn", "Willow", "Jasper", "Nala", "Shadow", "Pepper", "Bear", "Honey",
-    "Scout", "River", "Sage", "Oakley", "Maple", "Pebbles", "Biscuit", "Waffles",
-    "Pickle", "Mochi", "Dot", "Tofu", "Clover", "Ash", "Ivy", "Fern",
-    "Rocket", "Blue", "Goldie", "Pippin", "Marshmallow", "Cinnamon", "Nugget", "Cookie",
-]
+_fake = Faker()
 
 # -- Model ----------------------------------------------------------------
 
@@ -217,7 +205,7 @@ def sparkline(values, max_val):
 
 
 def random_name():
-    return random.choice(ANIMAL_NAMES)
+    return _fake.first_name()
 
 
 def make_plant():
