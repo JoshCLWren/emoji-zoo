@@ -660,17 +660,6 @@ class TestSimulation:
         plant_count = count_pop(state.grid)[Kind.PLANT]
         assert plant_count <= 100 * 0.1 + 5
 
-    def test_migration_when_herbs_low(self, state):
-        state.grid = Grid(10, 10)
-        state.config.migrate_herb_threshold = 10
-        state.config.migrate_herb_chance = 1.0
-        state.config.migrate_herb_group = 3
-        herbs = [ALL_HERBIVORES[0][0]]
-        for _ in range(50):
-            step(state, [])
-        herb_count = count_pop(state.grid)[Kind.HERBIVORE]
-        assert herb_count > 0
-
     def test_stats_track_births(self, state):
         state.grid = Grid(10, 10)
         herbs = [ALL_HERBIVORES[0][0]]

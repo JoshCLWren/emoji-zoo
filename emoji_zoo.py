@@ -193,12 +193,6 @@ class Config:
     carn_satiation: int = 28
     carn_max_neighbors: int = 2
 
-    migrate_herb_threshold: int = 5
-    migrate_herb_chance: float = 0.05
-    migrate_herb_group: int = 2
-    migrate_carn_threshold: int = 2
-    migrate_carn_chance: float = 0.03
-
     init_plant_ratio: float = 0.06
     init_herb_ratio: float = 0.012
     init_carn_ratio: float = 0.003
@@ -242,7 +236,6 @@ PRESETS: dict[str, dict] = {
         "plant_spread_chance": 0.10,
         "init_herb_ratio": 0.02,
         "init_carn_ratio": 0.001,
-        "migrate_herb_chance": 0.10,
         "disease_chance": 0.0,
     },
     "predator": {
@@ -694,8 +687,6 @@ def step(state: GameState, events: list[dict]) -> None:
                 x, y = spot
                 grid.cells[y][x] = make_plant()
 
-    _tick_migration(state)
-
     grid.decay_nutrients(config.nutrient_decay)
 
     state.tick += 1
@@ -1085,44 +1076,6 @@ def _find_carn_prey(grid: Grid, x: int, y: int,
                 if c.species != predator.species and c.traits.max_energy < traits.max_energy:
                     return (nx, ny, c)
     return None
-
-
-def _tick_migration(state: GameState) -> None:
-    grid = state.grid
-    config = state.config
-
-    if state.selected_herbs:
-        herb_n = sum(1 for row in grid.cells for c in row
-                     if c and c.kind == Kind.HERBIVORE)
-        if herb_n < config.migrate_herb_threshold and random.random() < config.migrate_herb_chance:
-            existing_species = [c.species for row in grid.cells for c in row
-                                if c and c.kind == Kind.HERBIVORE and c.species]
-            for _ in range(config.migrate_herb_group):
-                spot = grid.random_empty()
-                if spot:
-                    x, y = spot
-                    if existing_species:
-                        entity = make_herb_of_species(random.choice(existing_species))
-                    else:
-                        entity = make_herb(state.selected_herbs)
-                    if entity:
-                        grid.cells[y][x] = entity
-
-    if state.selected_carns:
-        carn_n = sum(1 for row in grid.cells for c in row
-                     if c and c.kind == Kind.CARNIVORE)
-        if carn_n < config.migrate_carn_threshold and random.random() < config.migrate_carn_chance:
-            spot = grid.random_empty()
-            if spot:
-                x, y = spot
-                existing_species = [c.species for row in grid.cells for c in row
-                                    if c and c.kind == Kind.CARNIVORE and c.species]
-                if existing_species:
-                    entity = make_carn_of_species(random.choice(existing_species))
-                else:
-                    entity = make_carn(state.selected_carns)
-                if entity:
-                    grid.cells[y][x] = entity
 
 
 # -- Setup ----------------------------------------------------------------
@@ -1609,8 +1562,6 @@ def _param_list(config: Config) -> list[tuple[str, str]]:
         ("Herb repro thresh", str(config.herb_repro_threshold)),
         ("Carn repro thresh", str(config.carn_repro_threshold)),
         ("Carn satiation", str(config.carn_satiation)),
-        ("Herb migrate %", f"{config.migrate_herb_chance:.3f}"),
-        ("Carn migrate %", f"{config.migrate_carn_chance:.3f}"),
         ("Disease chance", f"{config.disease_chance:.4f}"),
         ("Season length", str(config.season_length)),
         ("Base delay", f"{config.base_delay:.2f}s"),
@@ -1625,8 +1576,6 @@ def _adjust_param(config: Config, idx: int, direction: int) -> None:
         ("herb_repro_threshold", 5, 10, 80),
         ("carn_repro_threshold", 5, 10, 80),
         ("carn_satiation", 5, 5, 60),
-        ("migrate_herb_chance", 0.01, 0.0, 0.30),
-        ("migrate_carn_chance", 0.01, 0.0, 0.30),
         ("disease_chance", 0.001, 0.0, 0.05),
         ("season_length", 10, 10, 300),
         ("base_delay", 0.05, 0.05, 2.0),
